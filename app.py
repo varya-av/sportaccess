@@ -5,10 +5,11 @@ import hashlib
 import hmac
 
 app = Flask(__name__)
-app.secret_key = 'f7d2fca7d3e6fae2b43a958cbb9aa19fb291df1b8ccdb31844fc2648c9176f78'  # замени на безопасный ключ
+app.config['SERVER_NAME'] = 'sportaccess.onrender.com'  # 👈 добавили это
+app.secret_key = 'f7d2fca7d3e6fae2b43a958cbb9aa19fb291df1b8ccdb31844fc2648c9176f78'
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///users.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-db = SQLAlchemy(app)
+
 
 # === Модель пользователя ===
 class User(db.Model):
