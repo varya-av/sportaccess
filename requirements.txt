@@ -5,3 +5,4 @@ openpyxl
 qrcode
 requests
 reportlab
+gunicorn
