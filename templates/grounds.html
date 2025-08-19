@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Площадки</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <style>
+        .grounds-list {
+            max-width: 800px;
+            margin: 40px auto;
+            background: #ffffff;
+            border-radius: 10px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.05);
+            padding: 25px;
+        }
+        .grounds-list h3 {
+            color: #007acc;
+            border-bottom: 1px solid #eee;
+            padding-bottom: 10px;
+        }
+        .ground-card {
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 1px dashed #ccc;
+        }
+        .ground-card:last-child {
+            border-bottom: none;
+        }
+        .ground-card p {
+            margin: 4px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="grounds-list">
+        <h3>Список спортивных площадок</h3>
+        {% for g in grounds %}
+            <div class="ground-card">
+                <strong>{{ g.school_name }}</strong>
+                <p><em>{{ g.sport_types }}</em></p>
+                <p>{{ g.address }}</p>
+            </div>
+        {% endfor %}
+    </div>
+</body>
+</html>

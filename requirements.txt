@@ -1,0 +1,7 @@
+Flask
+Flask-SQLAlchemy
+pandas
+openpyxl
+qrcode
+requests
+reportlab

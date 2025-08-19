@@ -1,0 +1,310 @@
+/* Базовая стилистика */
+body {
+    font-family: 'Segoe UI', Roboto, sans-serif;
+    margin: 0;
+    padding: 20px;
+    background: #f0f8ff;
+    color: #2d2d2d;
+    transition: background 0.3s ease;
+}
+
+h2 {
+    color: #007acc;
+    margin-bottom: 20px;
+}
+
+a {
+    color: #007acc;
+    text-decoration: none;
+    transition: color 0.2s ease;
+}
+
+a:hover {
+    color: #00aa88;
+}
+
+/* Верхняя панель */
+.top-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: #e6f3ff;
+    padding: 12px 20px;
+    border-radius: 8px;
+    margin-bottom: 20px;
+    box-shadow: 0 2px 8px rgba(0, 122, 204, 0.1);
+}
+
+.top-bar span {
+    font-weight: bold;
+}
+
+/* Контролы и селектор спорта */
+.controls {
+    margin-bottom: 15px;
+}
+
+#sport-select {
+    padding: 6px 10px;
+    font-size: 16px;
+    border: 1px solid #00aa88;
+    border-radius: 4px;
+    background: white;
+    color: #2d2d2d;
+}
+
+/* Кнопки */
+button {
+    background: linear-gradient(135deg, #00aa88, #007acc);
+    color: white;
+    padding: 10px 20px;
+    font-size: 15px;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background 0.3s ease;
+}
+
+button:hover {
+    background: linear-gradient(135deg, #007acc, #00aa88);
+}
+
+.btn-danger {
+    background: #ff4d4f;
+    color: white;
+    padding: 10px 16px;
+    border: none;
+    border-radius: 6px;
+    font-weight: bold;
+    cursor: pointer;
+    transition: background 0.3s ease;
+}
+
+.btn-danger:hover {
+    background: #e63b3d;
+}
+
+/* Формы */
+input[type="text"],
+input[type="tel"],
+input[type="date"],
+select {
+    padding: 10px;
+    width: 260px;
+    border: 1px solid #ccc;
+    border-radius: 6px;
+    margin-bottom: 15px;
+    font-size: 15px;
+}
+
+form {
+    background: #ffffff;
+    padding: 25px;
+    border-radius: 10px;
+    box-shadow: 0 3px 10px rgba(0, 122, 204, 0.1);
+    max-width: 450px;
+    margin-bottom: 30px;
+}
+
+/* Flash сообщения */
+.flash {
+    background-color: #e0ffe8;
+    border-left: 5px solid #00aa88;
+    padding: 10px 15px;
+    margin-bottom: 20px;
+    border-radius: 6px;
+    color: #205e4d;
+    font-weight: 500;
+    animation: fadein 0.5s ease;
+}
+
+/* Плавное появление */
+@keyframes fadein {
+    from { opacity: 0; transform: translateY(-10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+/* Убираем фокус-обводку */
+button:focus,
+.btn-danger:focus,
+a:focus {
+    outline: none;
+    box-shadow: none;
+}
+
+/* Стили для профиля */
+.profile-container {
+    position: relative;
+    background-color: white;
+    padding: 8px 14px;
+    border-radius: 20px;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+    cursor: pointer;
+    transition: background 0.3s ease;
+}
+
+.profile-container:hover {
+    background-color: #e6f3ff;
+}
+
+.profile-name {
+    font-weight: 600;
+    color: #007acc;
+}
+
+.profile-popup {
+    display: none;
+    position: absolute;
+    top: 45px;
+    right: 0;
+    background-color: #fff;
+    border: 1px solid #ccc;
+    border-radius: 8px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    padding: 10px 14px;
+    min-width: 160px;
+    z-index: 1000;
+}
+
+.profile-popup a,
+.profile-popup button {
+    display: block;
+    width: 100%;
+    padding: 8px 0;
+    border: none;
+    background: none;
+    text-align: left;
+    font-size: 15px;
+    color: #007acc;
+    cursor: pointer;
+    transition: color 0.2s ease;
+}
+
+.profile-popup a:hover,
+.profile-popup button:hover {
+    color: #00aa88;
+    text-decoration: underline;
+}
+
+/* Таблица бронирований */
+.booking-table {
+    width: 100%;
+    max-width: 960px;
+    margin: 40px auto;
+    border-collapse: collapse;
+    background: #ffffff;
+    border-radius: 10px;
+    overflow: hidden;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+}
+
+.booking-table th, .booking-table td {
+    padding: 14px 16px;
+    border-bottom: 1px solid #eee;
+    text-align: left;
+}
+
+.booking-table th {
+    background-color: #e6f3ff;
+    color: #007acc;
+    font-weight: 600;
+}
+
+.booking-table td a {
+    margin-right: 10px;
+    color: #00aa88;
+    text-decoration: none;
+}
+
+.booking-table td a:hover {
+    text-decoration: underline;
+}
+
+.no-bookings {
+    text-align: center;
+    font-size: 18px;
+    margin-top: 60px;
+    color: #555;
+}
+
+.nav-link {
+    margin-bottom: 16px;
+    padding-left: 8px;
+}
+.register-container {
+    max-width: 450px;
+    margin: 80px auto;
+    background: #fff;
+    padding: 30px;
+    border-radius: 10px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+}
+
+.auth-form {
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+}
+
+.auth-form label {
+    font-weight: 500;
+    margin-bottom: 4px;
+}
+
+.auth-form input[type="text"],
+.auth-form input[type="tel"] {
+    padding: 10px;
+    font-size: 15px;
+    border: 1px solid #ccc;
+    border-radius: 6px;
+}
+.auth-container {
+    max-width: 450px;
+    margin: 80px auto;
+    background: #fff;
+    padding: 30px;
+    border-radius: 10px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+}
+
+.auth-form {
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+}
+
+.auth-form label {
+    font-weight: 500;
+    margin-bottom: 4px;
+}
+
+.auth-form input[type="tel"] {
+    padding: 10px;
+    font-size: 15px;
+    border: 1px solid #ccc;
+    border-radius: 6px;
+}
+.btn-danger {
+    background: #ff4d4f;
+    color: white;
+    padding: 10px 16px;
+    border: none;
+    border-radius: 6px;
+    font-weight: bold;
+    cursor: pointer;
+    transition: background 0.3s ease;
+}
+
+.btn-danger:hover {
+    background: #e63b3d;
+}
+
+/* Убрать обводку и отступы у кнопки в попапе */
+.profile-popup form {
+    margin: 0;
+    padding: 0;
+}
+.profile-popup form button {
+    width: 100%;
+    text-align: left;
+}
