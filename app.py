@@ -6,9 +6,9 @@ import hmac
 import pandas as pd
 
 app = Flask(__name__)
-app.secret_key = 'f7d2fca7d3e6fae2b43a958cbb9aa19fb291df1b8ccdb31844fc2648c9176f78'  # безопасный ключ
+app.secret_key = 'f7d2fca7d3e6fae2b43a958cbb9aa19fb291df1b8ccdb31844fc2648c9176f78'
 
-# === Настройка базы данных ===
+# Настройка базы данных
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///users.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
@@ -22,36 +22,36 @@ class User(db.Model):
     last_name = db.Column(db.String(100))
     username = db.Column(db.String(100))
 
-
 # === Регистрация ===
 @app.route('/', methods=['GET', 'POST'])
 def register():
     if request.method == 'POST':
         phone = request.form['phone']
-        if User.query.filter_by(phone=phone).first():
+        existing = User.query.filter_by(phone=phone).first()
+        if existing:
             flash('Этот номер уже зарегистрирован.')
+            return redirect(url_for('login'))
         else:
             user = User(phone=phone)
             db.session.add(user)
             db.session.commit()
             flash('Регистрация прошла успешно!')
-        return redirect(url_for('register'))
+            return redirect(url_for('main', user_id=user.id))
     return render_template('register.html')
 
-
-# === Авторизация по номеру телефона ===
+# === Вход ===
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
         phone = request.form['phone']
         user = User.query.filter_by(phone=phone).first()
         if user:
+            flash('Добро пожаловать!')
             return redirect(url_for('main', user_id=user.id))
         else:
-            flash('Пользователь с таким номером не найден. Сначала зарегистрируйтесь.')
+            flash('Пользователь не найден. Пожалуйста, зарегистрируйтесь.')
             return redirect(url_for('register'))
     return render_template('login.html')
-
 
 # === Главная страница с картой ===
 @app.route('/main')
@@ -61,16 +61,11 @@ def main():
     if not user:
         return redirect(url_for('register'))
 
-    try:
-        df = pd.read_excel('data/grounds.xlsx')
-        df.fillna('', inplace=True)
-        grounds = df.to_dict(orient='records')
-    except Exception as e:
-        flash('Ошибка загрузки данных с площадками.')
-        grounds = []
+    df = pd.read_excel('data/grounds.xlsx')
+    df.fillna('', inplace=True)
+    grounds = df.to_dict(orient='records')
 
     return render_template('main.html', user=user, grounds=grounds)
-
 
 # === Авторизация через Telegram ===
 @app.route('/tg_auth')
@@ -96,7 +91,6 @@ def tg_auth():
         flash('Вы успешно зарегистрированы через Telegram!')
         return redirect(url_for('main', user_id=user.id))
 
-
 # === Проверка подписи Telegram ===
 def verify_telegram_auth(data):
     auth_date = data.get('auth_date')
@@ -112,7 +106,6 @@ def verify_telegram_auth(data):
     hmac_hash = hmac.new(secret_key, data_check_string.encode(), hashlib.sha256).hexdigest()
 
     return hmac_hash == check_hash
-
 
 # === Локальный запуск ===
 if __name__ == '__main__':
