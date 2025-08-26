@@ -8,7 +8,7 @@ import pandas as pd
 app = Flask(__name__)
 app.secret_key = 'f7d2fca7d3e6fae2b43a958cbb9aa19fb291df1b8ccdb31844fc2648c9176f78'  # безопасный ключ
 
-# Настройка базы данных
+# === Настройка базы данных ===
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///users.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
@@ -21,6 +21,7 @@ class User(db.Model):
     first_name = db.Column(db.String(100))
     last_name = db.Column(db.String(100))
     username = db.Column(db.String(100))
+
 
 # === Регистрация ===
 @app.route('/', methods=['GET', 'POST'])
@@ -37,7 +38,8 @@ def register():
         return redirect(url_for('register'))
     return render_template('register.html')
 
-# === Авторизация ===
+
+# === Авторизация по номеру телефона ===
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
@@ -50,6 +52,7 @@ def login():
             return redirect(url_for('register'))
     return render_template('login.html')
 
+
 # === Главная страница с картой ===
 @app.route('/main')
 def main():
@@ -58,11 +61,16 @@ def main():
     if not user:
         return redirect(url_for('register'))
 
-    df = pd.read_excel('data/grounds.xlsx')
-    df.fillna('', inplace=True)
-    grounds = df.to_dict(orient='records')
+    try:
+        df = pd.read_excel('data/grounds.xlsx')
+        df.fillna('', inplace=True)
+        grounds = df.to_dict(orient='records')
+    except Exception as e:
+        flash('Ошибка загрузки данных с площадками.')
+        grounds = []
 
     return render_template('main.html', user=user, grounds=grounds)
+
 
 # === Авторизация через Telegram ===
 @app.route('/tg_auth')
@@ -75,6 +83,7 @@ def tg_auth():
     existing_user = User.query.filter_by(tg_id=tg_id).first()
     if existing_user:
         flash(f"Добро пожаловать обратно, {existing_user.first_name or 'пользователь'}!")
+        return redirect(url_for('main', user_id=existing_user.id))
     else:
         user = User(
             tg_id=tg_id,
@@ -85,15 +94,16 @@ def tg_auth():
         db.session.add(user)
         db.session.commit()
         flash('Вы успешно зарегистрированы через Telegram!')
-    return redirect(url_for('register'))
+        return redirect(url_for('main', user_id=user.id))
+
 
 # === Проверка подписи Telegram ===
 def verify_telegram_auth(data):
     auth_date = data.get('auth_date')
     if not auth_date or time.time() - int(auth_date) > 86400:
-        return False  # слишком старые данные
+        return False
 
-    bot_token = '8066729349:AAHmcXZaWus5J94kWpnzHGaXKnXPdhmfdn8'  # ОБЯЗАТЕЛЬНО ОБНОВИ!
+    bot_token = '8066729349:AAHmcXZaWus5J94kWpnzHGaXKnXPdhmfdn8'
     secret_key = hashlib.sha256(bot_token.encode()).digest()
 
     check_hash = data.pop('hash', '')
@@ -102,6 +112,7 @@ def verify_telegram_auth(data):
     hmac_hash = hmac.new(secret_key, data_check_string.encode(), hashlib.sha256).hexdigest()
 
     return hmac_hash == check_hash
+
 
 # === Локальный запуск ===
 if __name__ == '__main__':
