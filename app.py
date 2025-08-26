@@ -27,29 +27,26 @@ class User(db.Model):
 def register():
     if request.method == 'POST':
         phone = request.form['phone']
-        existing = User.query.filter_by(phone=phone).first()
-        if existing:
+        if User.query.filter_by(phone=phone).first():
             flash('Этот номер уже зарегистрирован.')
-            return redirect(url_for('login'))
         else:
             user = User(phone=phone)
             db.session.add(user)
             db.session.commit()
             flash('Регистрация прошла успешно!')
-            return redirect(url_for('main', user_id=user.id))
+            return redirect(url_for('main', user_id=user.id))  # переход на карту
     return render_template('register.html')
 
-# === Вход ===
+# === Авторизация ===
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
         phone = request.form['phone']
         user = User.query.filter_by(phone=phone).first()
         if user:
-            flash('Добро пожаловать!')
             return redirect(url_for('main', user_id=user.id))
         else:
-            flash('Пользователь не найден. Пожалуйста, зарегистрируйтесь.')
+            flash('Пользователь с таким номером не найден. Сначала зарегистрируйтесь.')
             return redirect(url_for('register'))
     return render_template('login.html')
 
@@ -61,8 +58,24 @@ def main():
     if not user:
         return redirect(url_for('register'))
 
+    # Загрузка и обработка Excel
     df = pd.read_excel('data/grounds.xlsx')
-    df.fillna('', inplace=True)
+
+    df = df.rename(columns={
+        'Название учреждения(краткое)': 'school_name',
+        'Адрес объекта': 'address',
+        'Широта (lat)': 'latitude',
+        'Долгота (lon)': 'longitude',
+        'Для какого вида спорта предназначена': 'sport_types'
+    })
+
+    df['latitude'] = pd.to_numeric(df['latitude'], errors='coerce')
+    df['longitude'] = pd.to_numeric(df['longitude'], errors='coerce')
+    df.dropna(subset=['latitude', 'longitude'], inplace=True)
+
+    df.reset_index(inplace=True)
+    df.rename(columns={'index': 'id'}, inplace=True)
+
     grounds = df.to_dict(orient='records')
 
     return render_template('main.html', user=user, grounds=grounds)
@@ -97,7 +110,7 @@ def verify_telegram_auth(data):
     if not auth_date or time.time() - int(auth_date) > 86400:
         return False
 
-    bot_token = '8066729349:AAHmcXZaWus5J94kWpnzHGaXKnXPdhmfdn8'
+    bot_token = '8066729349:AAHmcXZaWus5J94kWpnzHGaXKnXPdhmfdn8'  # !!! Обязательно обнови !!!
     secret_key = hashlib.sha256(bot_token.encode()).digest()
 
     check_hash = data.pop('hash', '')
