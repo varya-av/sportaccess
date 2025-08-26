@@ -34,7 +34,7 @@ def register():
             db.session.add(user)
             db.session.commit()
             flash('Регистрация прошла успешно!')
-            return redirect(url_for('main', user_id=user.id))  # переход на карту
+            return redirect(url_for('main', user_id=user.id))
     return render_template('register.html')
 
 # === Авторизация ===
@@ -58,23 +58,22 @@ def main():
     if not user:
         return redirect(url_for('register'))
 
-    # Загрузка и обработка Excel
     df = pd.read_excel('data/grounds.xlsx')
 
     df = df.rename(columns={
-        'Название учреждения(краткое)': 'school_name',
-        'Адрес объекта': 'address',
         'Широта (lat)': 'latitude',
         'Долгота (lon)': 'longitude',
-        'Для какого вида спорта предназначена': 'sport_types'
+        'Название учреждения(краткое)': 'school_name',
+        'Адрес объекта': 'address',
+        'Для какого вида спорта предназначена (например футбол/баскетбол, футбольное поле, воркаут и тд.)': 'sport_types'
     })
 
     df['latitude'] = pd.to_numeric(df['latitude'], errors='coerce')
     df['longitude'] = pd.to_numeric(df['longitude'], errors='coerce')
     df.dropna(subset=['latitude', 'longitude'], inplace=True)
 
-    df.reset_index(inplace=True)
-    df.rename(columns={'index': 'id'}, inplace=True)
+    df.reset_index(drop=True, inplace=True)
+    df['id'] = df.index
 
     grounds = df.to_dict(orient='records')
 
@@ -110,7 +109,7 @@ def verify_telegram_auth(data):
     if not auth_date or time.time() - int(auth_date) > 86400:
         return False
 
-    bot_token = '8066729349:AAHmcXZaWus5J94kWpnzHGaXKnXPdhmfdn8'  # !!! Обязательно обнови !!!
+    bot_token = '8066729349:AAHmcXZaWus5J94kWpnzHGaXKnXPdhmfdn8'  # замените на безопасный
     secret_key = hashlib.sha256(bot_token.encode()).digest()
 
     check_hash = data.pop('hash', '')
