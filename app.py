@@ -1,26 +1,37 @@
-from flask import Flask, render_template, request, redirect, url_for, flash
+from flask import Flask, render_template, request, redirect, url_for, flash, send_file, jsonify
 from flask_sqlalchemy import SQLAlchemy
-import time
-import hashlib
-import hmac
 import pandas as pd
+import time, hashlib, hmac
+import os
+from datetime import datetime
+from io import BytesIO
+import qrcode
+from reportlab.lib.pagesizes import A4
+from reportlab.pdfgen import canvas
 
 app = Flask(__name__)
-app.secret_key = 'f7d2fca7d3e6fae2b43a958cbb9aa19fb291df1b8ccdb31844fc2648c9176f78'
-
-# Настройка базы данных
+app.secret_key = 'your-secret-key'
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///users.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+
 db = SQLAlchemy(app)
 
-# === Модель пользователя ===
+# === Модели ===
 class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    phone = db.Column(db.String(20), unique=True, nullable=True)
-    tg_id = db.Column(db.String(50), unique=True, nullable=True)
+    phone = db.Column(db.String(20), unique=True)
+    tg_id = db.Column(db.String(50), unique=True)
     first_name = db.Column(db.String(100))
     last_name = db.Column(db.String(100))
     username = db.Column(db.String(100))
+
+class Booking(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'))
+    ground_id = db.Column(db.Integer)
+    date = db.Column(db.String(20))
+    time = db.Column(db.String(10))
+    qr_code_path = db.Column(db.String(200))
 
 # === Регистрация ===
 @app.route('/', methods=['GET', 'POST'])
@@ -33,7 +44,6 @@ def register():
             user = User(phone=phone)
             db.session.add(user)
             db.session.commit()
-            flash('Регистрация прошла успешно!')
             return redirect(url_for('main', user_id=user.id))
     return render_template('register.html')
 
@@ -46,11 +56,11 @@ def login():
         if user:
             return redirect(url_for('main', user_id=user.id))
         else:
-            flash('Пользователь с таким номером не найден. Сначала зарегистрируйтесь.')
+            flash('Пользователь не найден')
             return redirect(url_for('register'))
     return render_template('login.html')
 
-# === Главная страница с картой ===
+# === Главная карта ===
 @app.route('/main')
 def main():
     user_id = request.args.get('user_id')
@@ -59,68 +69,120 @@ def main():
         return redirect(url_for('register'))
 
     df = pd.read_excel('data/grounds.xlsx')
-
     df = df.rename(columns={
-        'Широта (lat)': 'latitude',
-        'Долгота (lon)': 'longitude',
         'Название учреждения(краткое)': 'school_name',
         'Адрес объекта': 'address',
-        'Для какого вида спорта предназначена (например футбол/баскетбол, футбольное поле, воркаут и тд.)': 'sport_types'
+        'Широта (lat)': 'latitude',
+        'Долгота (lon)': 'longitude',
+        'Для какого вида спорта предназначена': 'sport_types'
     })
-
-    df['latitude'] = pd.to_numeric(df['latitude'], errors='coerce')
-    df['longitude'] = pd.to_numeric(df['longitude'], errors='coerce')
-    df.dropna(subset=['latitude', 'longitude'], inplace=True)
-
-    df.reset_index(drop=True, inplace=True)
-    df['id'] = df.index
+    df = df.dropna(subset=['latitude', 'longitude'])
+    df = df.reset_index()
+    df.rename(columns={'index': 'id'}, inplace=True)
 
     grounds = df.to_dict(orient='records')
-
     return render_template('main.html', user=user, grounds=grounds)
 
-# === Авторизация через Telegram ===
-@app.route('/tg_auth')
-def tg_auth():
-    data = request.args.to_dict()
-    if not verify_telegram_auth(data):
-        return "Ошибка авторизации через Telegram", 403
+# === Страница записи ===
+@app.route('/book/<int:ground_id>', methods=['GET', 'POST'])
+def book(ground_id):
+    user_id = request.args.get('user_id')
+    user = User.query.get(user_id)
+    if not user:
+        return redirect(url_for('register'))
 
-    tg_id = data['id']
-    existing_user = User.query.filter_by(tg_id=tg_id).first()
-    if existing_user:
-        flash(f"Добро пожаловать обратно, {existing_user.first_name or 'пользователь'}!")
-        return redirect(url_for('main', user_id=existing_user.id))
-    else:
-        user = User(
-            tg_id=tg_id,
-            first_name=data.get('first_name'),
-            last_name=data.get('last_name'),
-            username=data.get('username')
-        )
-        db.session.add(user)
+    df = pd.read_excel('data/grounds.xlsx')
+    df = df.dropna(subset=['latitude', 'longitude']).reset_index()
+    df.rename(columns={
+        'index': 'id',
+        'Название учреждения(краткое)': 'school_name',
+        'Адрес объекта': 'address',
+        'Широта (lat)': 'latitude',
+        'Долгота (lon)': 'longitude',
+        'Для какого вида спорта предназначена': 'sport_types'
+    }, inplace=True)
+
+    ground = df[df['id'] == ground_id].iloc[0].to_dict()
+    today = datetime.now().strftime('%Y-%m-%d')
+    time_slots = ['10:00', '12:00', '14:00', '16:00', '18:00']
+
+    if request.method == 'POST':
+        date = request.form['date']
+        time_ = request.form['time']
+        existing = Booking.query.filter_by(ground_id=ground_id, date=date, time=time_).first()
+        if existing:
+            flash("Этот слот уже занят!")
+        else:
+            qr_text = f"{user.first_name} {user.last_name} записан на {ground['school_name']} {date} в {time_}"
+            qr = qrcode.make(qr_text)
+            qr_path = f"static/qr/booking_{user.id}_{ground_id}_{date}_{time_.replace(':', '')}.png"
+            qr.save(qr_path)
+
+            pdf_path = f"static/pdf/booking_{user.id}_{ground_id}_{date}_{time_.replace(':', '')}.pdf"
+            c = canvas.Canvas(pdf_path, pagesize=A4)
+            c.setFont("Helvetica", 14)
+            c.drawString(100, 800, "Подтверждение записи")
+            c.drawString(100, 780, f"ФИО: {user.first_name} {user.last_name}")
+            c.drawString(100, 760, f"Площадка: {ground['school_name']}")
+            c.drawString(100, 740, f"Дата и время: {date} {time_}")
+            c.drawImage(qr_path, 100, 600, width=150, height=150)
+            c.save()
+
+            booking = Booking(user_id=user.id, ground_id=ground_id, date=date, time=time_, qr_code_path=qr_path)
+            db.session.add(booking)
+            db.session.commit()
+
+            flash("Вы успешно записались!")
+            return redirect(url_for('my_bookings', user_id=user.id))
+
+    booked_slots = [b.time for b in Booking.query.filter_by(ground_id=ground_id, date=request.args.get('date')).all()]
+    return render_template('book.html', ground=ground, time_slots=time_slots, booked_slots=booked_slots, today=today)
+
+# === Список записей пользователя ===
+@app.route('/my-bookings')
+def my_bookings():
+    user_id = request.args.get('user_id')
+    user = User.query.get(user_id)
+    bookings = Booking.query.filter_by(user_id=user_id).all()
+
+    df = pd.read_excel('data/grounds.xlsx')
+    df = df.dropna(subset=['latitude', 'longitude']).reset_index()
+    df.rename(columns={
+        'index': 'id',
+        'Название учреждения(краткое)': 'school_name',
+        'Адрес объекта': 'address'
+    }, inplace=True)
+
+    id_to_ground = {row['id']: row for _, row in df.iterrows()}
+    for b in bookings:
+        b.ground = id_to_ground.get(b.ground_id, {})
+
+    return render_template('my_bookings.html', user=user, bookings=bookings)
+
+# === Отмена записи ===
+@app.route('/cancel-booking/<int:booking_id>')
+def cancel_booking(booking_id):
+    booking = Booking.query.get(booking_id)
+    if booking:
+        db.session.delete(booking)
         db.session.commit()
-        flash('Вы успешно зарегистрированы через Telegram!')
-        return redirect(url_for('main', user_id=user.id))
+        flash('Запись отменена.')
+    return redirect(url_for('my_bookings', user_id=booking.user_id))
 
-# === Проверка подписи Telegram ===
-def verify_telegram_auth(data):
-    auth_date = data.get('auth_date')
-    if not auth_date or time.time() - int(auth_date) > 86400:
-        return False
+# === Проверка участников ===
+@app.route('/group-check')
+def group_check():
+    ground_id = request.args.get('ground_id')
+    date = request.args.get('date')
+    time_ = request.args.get('time')
+    bookings = Booking.query.filter_by(ground_id=ground_id, date=date, time=time_).all()
+    users = [User.query.get(b.user_id) for b in bookings]
+    return jsonify([{'first_name': u.first_name, 'last_name': u.last_name} for u in users if u])
 
-    bot_token = '8066729349:AAHmcXZaWus5J94kWpnzHGaXKnXPdhmfdn8'  # замените на безопасный
-    secret_key = hashlib.sha256(bot_token.encode()).digest()
-
-    check_hash = data.pop('hash', '')
-    sorted_data = sorted([f"{k}={v}" for k, v in data.items()])
-    data_check_string = '\n'.join(sorted_data)
-    hmac_hash = hmac.new(secret_key, data_check_string.encode(), hashlib.sha256).hexdigest()
-
-    return hmac_hash == check_hash
-
-# === Локальный запуск ===
+# === Запуск ===
 if __name__ == '__main__':
+    os.makedirs('static/qr', exist_ok=True)
+    os.makedirs('static/pdf', exist_ok=True)
     with app.app_context():
         db.create_all()
     app.run(debug=True)
