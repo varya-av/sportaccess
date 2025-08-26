@@ -3,9 +3,10 @@ from flask_sqlalchemy import SQLAlchemy
 import time
 import hashlib
 import hmac
+import pandas as pd
 
 app = Flask(__name__)
-app.secret_key = 'f7d2fca7d3e6fae2b43a958cbb9aa19fb291df1b8ccdb31844fc2648c9176f78'  # замените на безопасный ключ
+app.secret_key = 'f7d2fca7d3e6fae2b43a958cbb9aa19fb291df1b8ccdb31844fc2648c9176f78'  # безопасный ключ
 
 # Настройка базы данных
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///users.db'
@@ -21,7 +22,7 @@ class User(db.Model):
     last_name = db.Column(db.String(100))
     username = db.Column(db.String(100))
 
-# === Главная страница регистрации ===
+# === Регистрация ===
 @app.route('/', methods=['GET', 'POST'])
 def register():
     if request.method == 'POST':
@@ -35,6 +36,33 @@ def register():
             flash('Регистрация прошла успешно!')
         return redirect(url_for('register'))
     return render_template('register.html')
+
+# === Авторизация ===
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if request.method == 'POST':
+        phone = request.form['phone']
+        user = User.query.filter_by(phone=phone).first()
+        if user:
+            return redirect(url_for('main', user_id=user.id))
+        else:
+            flash('Пользователь с таким номером не найден. Сначала зарегистрируйтесь.')
+            return redirect(url_for('register'))
+    return render_template('login.html')
+
+# === Главная страница с картой ===
+@app.route('/main')
+def main():
+    user_id = request.args.get('user_id')
+    user = User.query.get(user_id)
+    if not user:
+        return redirect(url_for('register'))
+
+    df = pd.read_excel('data/grounds.xlsx')
+    df.fillna('', inplace=True)
+    grounds = df.to_dict(orient='records')
+
+    return render_template('main.html', user=user, grounds=grounds)
 
 # === Авторизация через Telegram ===
 @app.route('/tg_auth')
@@ -65,8 +93,7 @@ def verify_telegram_auth(data):
     if not auth_date or time.time() - int(auth_date) > 86400:
         return False  # слишком старые данные
 
-    # Замените токен на свой от BotFather
-    bot_token = '8066729349:AAHmcXZaWus5J94kWpnzHGaXKnXPdhmfdn8'
+    bot_token = '8066729349:AAHmcXZaWus5J94kWpnzHGaXKnXPdhmfdn8'  # ОБЯЗАТЕЛЬНО ОБНОВИ!
     secret_key = hashlib.sha256(bot_token.encode()).digest()
 
     check_hash = data.pop('hash', '')
@@ -76,7 +103,7 @@ def verify_telegram_auth(data):
 
     return hmac_hash == check_hash
 
-# === Запуск локально ===
+# === Локальный запуск ===
 if __name__ == '__main__':
     with app.app_context():
         db.create_all()
