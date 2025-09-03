@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <title>{{ team.name }}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+  <div class="top-bar">
+    <h2>{{ team.name }}</h2>
+    <div class="profile-container">
+      <a href="/teams">⚽ Открытые команды</a>
+      <a href="/my-teams" style="margin-left:10px">👥 Мои команды</a>
+      <a href="/main" style="margin-left:10px">🏠 На карту</a>
+    </div>
+  </div>
+
+  <p>
+    <b>Когда:</b> {{ team.date }} {{ team.time }}<br>
+    <b>Площадка:</b> {{ gnd.school_name }} — {{ gnd.address }}<br>
+    <b>Спорт:</b> {{ team.sport or gnd.sport_types }}<br>
+    <b>Статус:</b> {{ 'набор открыт' if team.is_open else 'набор закрыт' }}<br>
+    <b>Участники:</b> {{ member_count }}/{{ team.max_size }}
+  </p>
+
+  <h3>Состав</h3>
+  {% if members %}
+    <ul>
+      {% for m in members %}
+        <li>{{ m.name }} {% if m.username %}(@{{ m.username }}){% endif %}{% if m.role=='owner' %} — капитан{% endif %}</li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p class="muted">Пока нет участников.</p>
+  {% endif %}
+
+  <div style="margin-top:16px">
+    {% if is_owner %}
+      <form method="post" action="/teams/{{ team.id }}/close" style="display:inline">
+        <button class="btn-danger" {% if not team.is_open %}disabled{% endif %}>Закрыть набор</button>
+      </form>
+    {% else %}
+      {% if i_am_member %}
+        <form method="post" action="/teams/{{ team.id }}/leave" style="display:inline">
+          <button class="btn-danger">Выйти из команды</button>
+        </form>
+      {% else %}
+        <form method="post" action="/teams/{{ team.id }}/join" style="display:inline">
+          <button {% if not team.is_open %}disabled{% endif %}>Присоединиться</button>
+        </form>
+      {% endif %}
+    {% endif %}
+  </div>
+</body>
+</html>

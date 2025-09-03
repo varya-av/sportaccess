@@ -2,17 +2,20 @@
 <html lang="ru">
 <head>
   <meta charset="UTF-8">
-  <title>Бронирование — {{ ground.school_name }}</title>
+  <title>Запись — {{ ground.school_name }}</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+  <style>.muted{color:#6e8ba6}</style>
 </head>
 <body>
   <div class="top-bar">
-    <h2>Бронирование площадки</h2>
+    <h2>{{ ground.school_name }}</h2>
     <div class="profile-container" onclick="toggleProfilePopup()">
       <span class="profile-name">{{ user.first_name }} {{ user.last_name }}</span>
       <div class="profile-popup" id="profile-popup">
         <a href="/main">🏠 На карту</a>
         <a href="/my-bookings">📋 Мои записи</a>
+        <a href="/teams">⚽ Открытые команды</a>
+        <a href="/my-teams">👥 Мои команды</a>
         <a href="/logout">🚪 Выйти</a>
       </div>
     </div>
@@ -24,35 +27,82 @@
     {% endif %}
   {% endwith %}
 
-  <div style="max-width:520px">
-    <p><b>{{ ground.school_name }}</b><br>{{ ground.address }}<br><i>{{ ground.sport_types }}</i></p>
+  <p class="muted">{{ ground.address }} · <i>{{ ground.sport_types }}</i></p>
 
-    <form method="post" class="auth-form">
-      <label>Дата</label>
-      <input type="date" name="date" required>
+  <form method="post" class="auth-form" style="max-width:520px">
+    <label>Дата</label>
+    <input type="date" name="date" required>
 
-      <label>Время</label>
-      <input type="time" name="time" required>
+    <label>Время</label>
+    <input type="time" name="time" required>
 
-      <label>Комментарий (необязательно)</label>
-      <input type="text" name="comment" placeholder="Например, школьная секция">
+    <label>Режим</label>
+    <select name="mode" id="mode" onchange="toggleTeamFields()">
+      <option value="solo">Личная запись</option>
+      <option value="team_create">Создать команду</option>
+    </select>
 
-      <button type="submit">Создать запись</button>
-      <a href="/main" style="margin-left:10px">Отмена</a>
-    </form>
-  </div>
+    <div id="teamFields" style="display:none">
+      <label>Название команды</label>
+      <input type="text" name="team_name" placeholder="Например: Лицей 19 — футбол" />
+
+      <label>Максимум участников</label>
+      <input type="number" name="max_size" value="10" min="2" max="50" />
+    </div>
+
+    <label>Комментарий (необязательно)</label>
+    <input type="text" name="comment" placeholder="Например, школьная секция">
+
+    <button type="submit">Продолжить</button>
+    <a href="/main" style="margin-left:10px">Отмена</a>
+  </form>
+
+  <hr style="margin:30px 0">
+  <h3>Открытые команды на этой площадке</h3>
+  {% if open_teams %}
+    <table class="booking-table">
+      <thead><tr>
+        <th>Название</th><th>Дата</th><th>Время</th><th>Спорт</th><th>Участников</th><th></th>
+      </tr></thead>
+      <tbody>
+      {% for t in open_teams %}
+        <tr>
+          <td>{{ t.name }}</td>
+          <td>{{ t.date }}</td>
+          <td>{{ t.time }}</td>
+          <td>{{ t.sport or ground.sport_types }}</td>
+          <td>{{ (t|attr('id')) and (namespace().count=0) }}</td>
+          <td>
+            <form method="post" action="/teams/{{ t.id }}/join">
+              <button>Присоединиться</button>
+            </form>
+            <a href="/teams/{{ t.id }}" style="margin-left:8px">Подробнее</a>
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="muted">Пока нет открытых команд.</p>
+  {% endif %}
 
   <script>
     function toggleProfilePopup(){
       const p = document.getElementById('profile-popup');
       p.style.display = p.style.display === 'block' ? 'none' : 'block';
     }
-    window.addEventListener('click', e => {
-      if (!e.target.closest('.profile-container')) {
-        const p = document.getElementById('profile-popup');
-        if (p) p.style.display = 'none';
+    window.addEventListener("click", e => {
+      if (!e.target.closest(".profile-container")) {
+        const p = document.getElementById("profile-popup");
+        if (p) p.style.display = "none";
       }
     });
+
+    function toggleTeamFields(){
+      const mode = document.getElementById('mode').value;
+      document.getElementById('teamFields').style.display = (mode === 'team_create') ? 'block' : 'none';
+    }
+    toggleTeamFields();
   </script>
 </body>
 </html>

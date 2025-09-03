@@ -14,6 +14,8 @@
       <span class="profile-name">{{ user.first_name }} {{ user.last_name }}</span>
       <div class="profile-popup" id="profile-popup">
         <a href="/my-bookings">📋 Мои записи</a>
+        <a href="/teams">⚽ Открытые команды</a>
+        <a href="/my-teams">👥 Мои команды</a>
         {% if is_admin %}<a href="/admin">🛠 Админка</a>{% endif %}
         <a href="/logout">🚪 Выйти</a>
       </div>
@@ -33,7 +35,7 @@
           <b>${place.school_name || ''}</b><br>
           ${place.address || ''}<br>
           <i>${place.sport_types || ''}</i><br>
-          <a href="/book/${place.id}">Записаться</a>
+          <a href="/book/${place.id}">Записаться / Создать команду</a>
         `);
       }
     });

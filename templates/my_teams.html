@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <title>Мои команды</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+  <div class="top-bar">
+    <h2>Мои команды</h2>
+    <div class="profile-container">
+      <a href="/teams">⚽ Открытые команды</a>
+      <a href="/main" style="margin-left:10px">🏠 На карту</a>
+    </div>
+  </div>
+
+  {% if items %}
+    <table class="booking-table">
+      <thead><tr>
+        <th>Название</th><th>Дата</th><th>Время</th><th>Площадка</th><th>Адрес</th><th>Спорт</th><th>Участников</th><th></th>
+      </tr></thead>
+      <tbody>
+      {% for x in items %}
+        <tr>
+          <td>{{ x.name }}</td>
+          <td>{{ x.date }}</td>
+          <td>{{ x.time }}</td>
+          <td>{{ x.school_name }}</td>
+          <td>{{ x.address }}</td>
+          <td>{{ x.sport }}</td>
+          <td>{{ x.members }}/{{ x.max_size }}</td>
+          <td><a href="/teams/{{ x.id }}">Открыть</a></td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="no-bookings">Вы пока не состоите ни в одной команде.</p>
+  {% endif %}
+</body>
+</html>
