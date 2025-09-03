@@ -22,7 +22,6 @@
     <h1>Войти через Telegram</h1>
     <p>Нажмите кнопку ниже. Мы не получаем доступа к переписке — только публичные данные профиля (имя, username, id).</p>
 
-    <!-- Контейнер, куда Telegram заменит скрипт кнопкой -->
     <div id="tg-button">
       <script async src="https://telegram.org/js/telegram-widget.js?7"
               data-telegram-login="SportCityKorolevBot"
@@ -38,7 +37,7 @@
     <ol class="help">
       <li>Откройте страницу заново обычным браузером (не во «встроенном» браузере Telegram).</li>
       <li>Проверьте, не блокирует ли сеть загрузку <code>telegram.org</code>.</li>
-      <li>Попробуйте этот прямой запуск: <a target="_blank" rel="noopener" href="https://telegram.org/js/telegram-widget.js?7">проверить загрузку скрипта</a>.</li>
+      <li>Проверьте прямую загрузку: <a target="_blank" rel="noopener" href="https://telegram.org/js/telegram-widget.js?7">скрипт</a>.</li>
     </ol>
 
     <div id="err" class="err"></div>
@@ -49,7 +48,6 @@
   </div>
 
   <script>
-    // Если виджет не подгрузился, покажем текст ошибки
     setTimeout(() => {
       const btn = document.querySelector('#tg-button .telegram-login-widget');
       if (!btn) {

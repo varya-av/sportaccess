@@ -4,6 +4,9 @@ import time, hashlib, hmac, pandas as pd
 import os, json
 from urllib.parse import parse_qsl
 
+# === Константы ===
+BOT_TOKEN = '7971252908:AAGfTw5shz1qRmioIOh_PYNSzEDEsyEAmUI'  # твой текущий токен бота @SportCityKorolevBot
+
 app = Flask(__name__)
 app.secret_key = os.urandom(32)
 
@@ -24,19 +27,27 @@ class User(db.Model):
 
 # ======= Маршруты =======
 
+@app.route('/health')
+def health():
+    return 'ok', 200
+
+
 @app.route('/')
 def index():
-    # Если человек пришел из браузера — покажем кнопку Login Widget (на всякий случай)
-    return redirect(url_for('login'))
+    # По умолчанию открываем WebApp-вход (для мини-приложения)
+    return redirect(url_for('webapp_entry'))
 
+
+# План Б — вход через Login Widget (нужен, если открывают в обычном браузере)
 @app.route('/login')
 def login():
     return render_template('login.html')
 
-# Стартовая страница WebApp (её URL вставляем в кнопку у бота)
+
+# Стартовая страница WebApp (эту ссылку указываем в меню бота)
 @app.route('/webapp')
 def webapp_entry():
-    return render_template('webapp.html')  # внутри Telegram WebApp авто-логинится и редиректит на /main
+    return render_template('webapp.html')  # внутри Telegram WebApp возьмёт initData и авторизует
 
 
 # Приём и проверка initData из Telegram WebApp (POST из JS)
@@ -46,8 +57,8 @@ def tg_webapp_auth():
     if not init_data:
         return "no init_data", 400
 
-    # Валидация подписи по правилам Telegram Web Apps
     if not verify_webapp_init_data(init_data):
+        print("WEBAPP AUTH FAIL")  # смотри в Railway → Logs
         return "forbidden", 403
 
     # Парсим initData → достаем user
@@ -71,8 +82,31 @@ def tg_webapp_auth():
         db.session.commit()
 
     session['user_id'] = user.id
-    # Ответ для fetch — фронт после 200 переведёт на /main
+    # фронт после 200 перейдёт на /main
     return jsonify(status="ok")
+
+
+# Login Widget (браузер): GET /tg_auth?id=...&first_name=...&hash=...
+@app.route('/tg_auth')
+def tg_auth():
+    data = request.args.to_dict()
+    if not verify_telegram_auth(data):
+        return "Ошибка авторизации через Telegram", 403
+
+    tg_id = data['id']
+    user = User.query.filter_by(tg_id=tg_id).first()
+    if not user:
+        user = User(
+            tg_id=tg_id,
+            first_name=data.get('first_name'),
+            last_name=data.get('last_name'),
+            username=data.get('username')
+        )
+        db.session.add(user)
+        db.session.commit()
+
+    session['user_id'] = user.id
+    return redirect(url_for('main'))
 
 
 # Главная страница с картой
@@ -88,6 +122,7 @@ def main():
     if not os.path.exists(xlsx_path):
         abort(500, f'Файл {xlsx_path} не найден на сервере')
 
+    # Читаем Excel и оставляем нужные поля
     df = pd.read_excel(xlsx_path).rename(columns={
         'Широта (lat)': 'latitude',
         'Долгота (lon)': 'longitude',
@@ -96,9 +131,11 @@ def main():
         'Для какого вида спорта предназначена (например футбол/баскетбол, футбольное поле, воркаут и тд.)': 'sport_types'
     })[['latitude', 'longitude', 'school_name', 'address', 'sport_types']]
 
-    # Запятые → точки, иначе будут NaN
+    # Запятые → точки (иначе будут NaN)
     df['latitude']  = pd.to_numeric(df['latitude'].astype(str).str.replace(',', '.', regex=False), errors='coerce')
     df['longitude'] = pd.to_numeric(df['longitude'].astype(str).str.replace(',', '.', regex=False), errors='coerce')
+
+    # Чистим, даём ID
     df.dropna(subset=['latitude', 'longitude'], inplace=True)
     df.reset_index(drop=True, inplace=True)
     df['id'] = df.index
@@ -115,39 +152,32 @@ def logout():
 
 # ======= Проверки подписи =======
 
-# Login Widget (если используешь /tg_auth где-то ещё)
-def verify_telegram_auth(data):
+# Login Widget проверяется как раньше (секрет = sha256(bot_token))
+def verify_telegram_auth(data: dict) -> bool:
     auth_date = data.get('auth_date')
     if not auth_date or time.time() - int(auth_date) > 86400:
         return False
-    bot_token = '7971252908:AAGfTw5shz1qRmioIOh_PYNSzEDEsyEAmUI'  # твой ТЕКУЩИЙ токен
-    secret_key = hashlib.sha256(bot_token.encode()).digest()
+
+    secret_key = hashlib.sha256(BOT_TOKEN.encode()).digest()
     check_hash = data.pop('hash', '')
     data_check_string = '\n'.join(sorted(f"{k}={v}" for k, v in data.items()))
-    h = hmac.new(secret_key, data_check_string.encode(), hashlib.sha256).hexdigest()
-    return h == check_hash
+    calc_hash = hmac.new(secret_key, data_check_string.encode(), hashlib.sha256).hexdigest()
+    return hmac.compare_digest(calc_hash, check_hash)
 
-# WebApp: проверяем initData (строка query-like)
+# WebApp initData: секрет = HMAC_SHA256(key="WebAppData", msg=bot_token)
 def verify_webapp_init_data(init_data: str) -> bool:
-    # init_data — строка вида "query_id=...&user=%7B...%7D&auth_date=...&hash=..."
     pairs = dict(parse_qsl(init_data, keep_blank_values=True))
     hash_from_tg = pairs.pop('hash', None)
     if not hash_from_tg:
         return False
 
-    bot_token = '7971252908:AAGfTw5shz1qRmioIOh_PYNSzEDEsyEAmUI'  # тот же токен бота
-    secret_key = hashlib.sha256(bot_token.encode()).digest()
-
-    # data_check_string — k=v по ключам, отсортированным по алфавиту, через \n
+    # 1) ключ от токена
+    secret_key = hmac.new(b'WebAppData', BOT_TOKEN.encode(), hashlib.sha256).digest()
+    # 2) k=v\nk=v... по отсортированным ключам
     data_check_string = '\n'.join(f"{k}={v}" for k, v in sorted(pairs.items(), key=lambda x: x[0]))
-    h = hmac.new(secret_key, data_check_string.encode(), hashlib.sha256).hexdigest()
-    return h == hash_from_tg
-
-
-# Healthcheck
-@app.route('/health')
-def health():
-    return 'ok', 200
+    # 3) сверяем подпись
+    calc_hash = hmac.new(secret_key, data_check_string.encode(), hashlib.sha256).hexdigest()
+    return hmac.compare_digest(calc_hash, hash_from_tg)
 
 
 # === Запуск локально ===
