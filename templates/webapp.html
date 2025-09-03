@@ -1,24 +1,45 @@
 <!DOCTYPE html>
 <html lang="ru">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>SportCity — Mini App</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>SportCity — вход</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+  <style>
+    body{margin:0;font-family:system-ui,Segoe UI,Roboto,Arial;background:#f7fbff;color:#0b3558}
+    .wrap{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:16px}
+    .card{background:#fff;border:1px solid #e6eff7;border-radius:12px;box-shadow:0 6px 18px rgba(0,0,0,.06);padding:22px;max-width:560px;width:100%}
+    h2{margin:0 0 8px}
+    .muted{color:#6e8ba6;font-size:14px}
+    .err{color:#b01030;margin-top:10px;display:none}
+    .ok{color:#1a7f37;margin-top:10px;display:none}
+    .row{margin-top:14px}
+    .btn{display:inline-block;padding:10px 16px;border:0;border-radius:10px;cursor:pointer;background:#0b63ce;color:#fff;font-weight:600}
+    .btn[disabled]{opacity:.6;cursor:not-allowed}
+    #fallback{display:none;margin-top:12px}
+    #who b{font-weight:700}
+  </style>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
 </head>
 <body>
-  <div class="top-bar"><h2>Открываем мини-приложение…</h2></div>
-
   <div class="wrap">
     <div class="card">
-      <p class="muted">Если вы видите это в обычном браузере, откройте страницу из чата бота Telegram.</p>
-      <div id="msg" class="muted">Пробуем авторизоваться…</div>
-      <div id="ok" class="ok" style="display:none">Авторизация прошла, загружаем карту…</div>
-      <div id="err" class="err" style="display:none"></div>
+      <h2>Вход в мини-приложение</h2>
+      <p class="muted">Telegram передаст нам ваши публичные данные профиля (имя/username/id). Отдельного «разрешить доступ» в WebApp нет — подпись проверяется на сервере.</p>
 
-      <div id="fallback" style="display:none;margin-top:12px">
-        <p class="muted">Не открывается как WebApp? Попробуйте запустить мини-приложение напрямую:</p>
+      <div id="who" class="row muted" style="display:none">
+        Войдёте как: <b>пользователь</b>
+      </div>
+
+      <div class="row">
+        <button id="loginBtn" class="btn" style="display:none">Войти</button>
+      </div>
+
+      <div id="ok" class="ok">Авторизация прошла, загружаем карту…</div>
+      <div id="err" class="err"></div>
+
+      <div id="fallback">
+        <p class="muted">Не открывается как WebApp? Запустите приложение напрямую:</p>
         <p><a href="tg://resolve?domain=SportCityKorolevBot&startapp=1">Открыть в Telegram (приложение)</a></p>
         <p><a href="https://t.me/SportCityKorolevBot?startapp=1" target="_blank" rel="noopener">Открыть через t.me (из браузера)</a></p>
       </div>
@@ -30,28 +51,68 @@
 
     function show(id, text){
       const el = document.getElementById(id);
-      if (text) el.textContent = text;
+      if (!el) return;
+      if (typeof text === 'string') el.textContent = text;
       el.style.display = 'block';
     }
+    function hide(id){
+      const el = document.getElementById(id);
+      if (el) el.style.display = 'none';
+    }
 
-    if (!tg) {
-      show('err', 'Это не Telegram WebApp. Откройте из чата бота или воспользуйтесь ссылками ниже.');
+    // 1) Проверяем, что мы действительно внутри Telegram WebApp
+    if(!tg){
+      show('err', 'Это не Telegram WebApp. Откройте страницу из чата бота или воспользуйтесь ссылками ниже.');
+      return show('fallback');
+    }
+
+    tg.ready();
+    tg.expand();
+
+    // 2) Получаем небезопасные данные для отображения имени (на сервер ничего не шлём)
+    const initData = tg.initData;
+    const u = tg.initDataUnsafe?.user || {};
+    const displayName = [u.first_name, u.last_name].filter(Boolean).join(' ') || u.username || 'пользователь';
+
+    // Если внутри WebApp, но Telegram по какой-то причине не дал initData — подскажем, как запустить правильно
+    if(!initData){
+      show('err', 'initData пустой. Запустите мини-приложение из бота (кнопка OPEN APP) или используйте ссылки ниже.');
       show('fallback');
     } else {
-      tg.ready(); tg.expand();
-      const initData = tg.initData;
-      if (!initData) {
-        show('err', 'initData пустой. Запустите мини-приложение из бота или используйте ссылки ниже.');
-        show('fallback');
-      } else {
-        const form = new FormData();
-        form.append('init_data', initData);
-
-        fetch('/tg_webapp_auth', { method: 'POST', body: form, credentials: 'include' })
-          .then(r => { if (!r.ok) throw new Error('Auth failed: ' + r.status); return r.json(); })
-          .then(() => { show('ok'); location.href = '/main'; })
-          .catch(e => { show('err', e.message); show('fallback'); });
+      // Показываем имя и кнопку "Войти"
+      const who = document.getElementById('who');
+      if (who) {
+        who.querySelector('b').textContent = displayName;
+        who.style.display = 'block';
       }
+
+      const btn = document.getElementById('loginBtn');
+      btn.style.display = 'inline-block';
+      btn.onclick = async () => {
+        try {
+          btn.disabled = true;
+          btn.textContent = 'Входим…';
+
+          const form = new FormData();
+          form.append('init_data', initData);
+
+          const r = await fetch('/tg_webapp_auth', {
+            method: 'POST',
+            body: form,
+            credentials: 'include'
+          });
+          if(!r.ok){
+            throw new Error('Auth failed: ' + r.status);
+          }
+          show('ok');
+          // небольшая пауза, чтобы показать статус
+          setTimeout(() => { window.location.href = '/main'; }, 300);
+        } catch (e){
+          show('err', String(e.message || e));
+          btn.disabled = false;
+          btn.textContent = 'Войти';
+        }
+      };
     }
   </script>
 </body>
