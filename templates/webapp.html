@@ -25,14 +25,15 @@
   <div class="wrap">
     <div class="card">
       <h2>Вход в мини-приложение</h2>
-      <p class="muted">Telegram передаст нам ваши публичные данные профиля (имя/username/id). Отдельного «разрешить доступ» в WebApp нет — подпись проверяется на сервере.</p>
+      <p class="muted">Telegram передаст нам ваши публичные данные профиля (имя/username/id).
+        Отдельного «разрешить доступ» в WebApp нет — подпись проверяется на сервере.</p>
 
-      <div id="who" class="row muted" style="display:none">
-        Войдёте как: <b>пользователь</b>
+      <div id="who" class="row muted">
+        Войдёте как: <b id="name">пользователь</b>
       </div>
 
       <div class="row">
-        <button id="loginBtn" class="btn" style="display:none">Войти</button>
+        <button id="loginBtn" class="btn">Войти</button>
       </div>
 
       <div id="ok" class="ok">Авторизация прошла, загружаем карту…</div>
@@ -47,73 +48,53 @@
   </div>
 
   <script>
-    const tg = window.Telegram?.WebApp;
+    const tg = window.Telegram && window.Telegram.WebApp;
+    const nameEl = document.getElementById('name');
+    const errEl  = document.getElementById('err');
+    const okEl   = document.getElementById('ok');
+    const fbEl   = document.getElementById('fallback');
+    const btn    = document.getElementById('loginBtn');
 
-    function show(id, text){
-      const el = document.getElementById(id);
-      if (!el) return;
-      if (typeof text === 'string') el.textContent = text;
-      el.style.display = 'block';
-    }
-    function hide(id){
-      const el = document.getElementById(id);
-      if (el) el.style.display = 'none';
-    }
+    const show = (el, text) => { if(text) el.textContent = text; el.style.display = 'block'; };
+    const hide = el => el.style.display = 'none';
 
-    // 1) Проверяем, что мы действительно внутри Telegram WebApp
-    if(!tg){
-      show('err', 'Это не Telegram WebApp. Откройте страницу из чата бота или воспользуйтесь ссылками ниже.');
-      return show('fallback');
-    }
+    // Пытаемся красиво показать имя, даже если это не WebApp
+    try {
+      const u = tg?.initDataUnsafe?.user || {};
+      const displayName = [u.first_name, u.last_name].filter(Boolean).join(' ') || u.username || 'пользователь';
+      nameEl.textContent = displayName;
+    } catch(_) {}
 
-    tg.ready();
-    tg.expand();
+    if (tg) { tg.ready(); tg.expand(); }
 
-    // 2) Получаем небезопасные данные для отображения имени (на сервер ничего не шлём)
-    const initData = tg.initData;
-    const u = tg.initDataUnsafe?.user || {};
-    const displayName = [u.first_name, u.last_name].filter(Boolean).join(' ') || u.username || 'пользователь';
-
-    // Если внутри WebApp, но Telegram по какой-то причине не дал initData — подскажем, как запустить правильно
-    if(!initData){
-      show('err', 'initData пустой. Запустите мини-приложение из бота (кнопка OPEN APP) или используйте ссылки ниже.');
-      show('fallback');
-    } else {
-      // Показываем имя и кнопку "Войти"
-      const who = document.getElementById('who');
-      if (who) {
-        who.querySelector('b').textContent = displayName;
-        who.style.display = 'block';
-      }
-
-      const btn = document.getElementById('loginBtn');
-      btn.style.display = 'inline-block';
-      btn.onclick = async () => {
-        try {
-          btn.disabled = true;
-          btn.textContent = 'Входим…';
-
-          const form = new FormData();
-          form.append('init_data', initData);
-
-          const r = await fetch('/tg_webapp_auth', {
-            method: 'POST',
-            body: form,
-            credentials: 'include'
-          });
-          if(!r.ok){
-            throw new Error('Auth failed: ' + r.status);
-          }
-          show('ok');
-          // небольшая пауза, чтобы показать статус
-          setTimeout(() => { window.location.href = '/main'; }, 300);
-        } catch (e){
-          show('err', String(e.message || e));
-          btn.disabled = false;
-          btn.textContent = 'Войти';
+    btn.addEventListener('click', async () => {
+      try {
+        // Проверяем наличие initData непосредственно в момент клика
+        const initData = tg?.initData || '';
+        if (!initData) {
+          show(errEl, 'Это не Telegram WebApp или initData пустой. Откройте через кнопку OPEN APP в боте или используйте ссылки ниже.');
+          return show(fbEl);
         }
-      };
-    }
+
+        btn.disabled = true; btn.textContent = 'Входим…';
+
+        const form = new FormData();
+        form.append('init_data', initData);
+
+        const r = await fetch('/tg_webapp_auth', {
+          method: 'POST',
+          body: form,
+          credentials: 'include'
+        });
+        if (!r.ok) throw new Error('Auth failed: ' + r.status);
+
+        show(okEl);
+        setTimeout(() => { location.href = '/main'; }, 300);
+      } catch (e) {
+        show(errEl, String(e.message || e));
+        btn.disabled = false; btn.textContent = 'Войти';
+      }
+    });
   </script>
 </body>
 </html>
