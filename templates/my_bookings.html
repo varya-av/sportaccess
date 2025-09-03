@@ -1,71 +1,65 @@
 <!DOCTYPE html>
 <html lang="ru">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Мои записи</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+  <meta charset="UTF-8">
+  <title>Мои записи</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 </head>
 <body>
-    <div class="top-bar">
-        <h2>Мои записи: {{ user.first_name }} {{ user.last_name }}</h2>
-        <div class="profile-container" onclick="toggleProfilePopup()">
-            <span class="profile-name">{{ user.first_name }} {{ user.last_name }}</span>
-            <div class="profile-popup" id="profile-popup">
-                <a href="/logout">🚪 Выйти</a>
-                <form method="POST" action="/delete-profile" onsubmit="return confirm('Вы уверены, что хотите удалить профиль и все записи?');">
-                    <button type="submit" class="btn-danger">❌ Удалить профиль</button>
-                </form>
-            </div>
-        </div>
+  <div class="top-bar">
+    <h2>Мои записи</h2>
+    <div class="profile-container" onclick="toggleProfilePopup()">
+      <span class="profile-name">{{ user.first_name }} {{ user.last_name }}</span>
+      <div class="profile-popup" id="profile-popup">
+        <a href="/main">🏠 На карту</a>
+        <a href="/logout">🚪 Выйти</a>
+      </div>
     </div>
+  </div>
 
-    <div class="nav-link">
-        <a href="/main">← На главную</a>
-    </div>
-
-    {% if bookings %}
-        <table class="booking-table">
-            <thead>
-                <tr>
-                    <th>Дата</th>
-                    <th>Время</th>
-                    <th>Площадка</th>
-                    <th>Адрес</th>
-                    <th>Действия</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for b in bookings %}
-                <tr>
-                    <td>{{ b.date }}</td>
-                    <td>{{ b.time }}</td>
-                    <td>{{ b.ground.school_name }}</td>
-                    <td>{{ b.ground.address }}</td>
-                    <td>
-                        <a href="/{{ b.qr_code_path }}" target="_blank">QR</a>
-                        <a href="/static/pdf/booking_{{ b.user_id }}_{{ b.ground_id }}_{{ b.date }}_{{ b.time.replace(':','') }}.pdf" target="_blank">PDF</a>
-                        <a href="/cancel-booking/{{ b.id }}" onclick="return confirm('Вы уверены, что хотите отменить запись?')">Удалить</a>
-                    </td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
-    {% else %}
-        <div class="no-bookings">Нет активных записей.</div>
+  {% with messages = get_flashed_messages() %}
+    {% if messages %}
+      {% for m in messages %}<div class="flash">{{ m }}</div>{% endfor %}
     {% endif %}
+  {% endwith %}
 
-    <script>
-        function toggleProfilePopup() {
-            const popup = document.getElementById("profile-popup");
-            popup.style.display = (popup.style.display === "block") ? "none" : "block";
-        }
-        window.addEventListener("click", function(e) {
-            if (!e.target.closest(".profile-container")) {
-                const popup = document.getElementById("profile-popup");
-                if (popup) popup.style.display = "none";
-            }
-        });
-    </script>
+  {% if items %}
+    <table class="booking-table">
+      <thead><tr>
+        <th>Дата</th><th>Время</th><th>Площадка</th><th>Адрес</th><th>Вид спорта</th><th></th>
+      </tr></thead>
+      <tbody>
+      {% for b in items %}
+        <tr>
+          <td>{{ b.date }}</td>
+          <td>{{ b.time }}</td>
+          <td>{{ b.school_name }}</td>
+          <td>{{ b.address }}</td>
+          <td>{{ b.sport_types }}</td>
+          <td>
+            <form method="post" action="/cancel/{{ b.id }}" onsubmit="return confirm('Отменить запись?')">
+              <button class="btn-danger">Отменить</button>
+            </form>
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="no-bookings">Записей пока нет.</p>
+  {% endif %}
+
+  <script>
+    function toggleProfilePopup(){
+      const p = document.getElementById('profile-popup');
+      p.style.display = p.style.display === 'block' ? 'none' : 'block';
+    }
+    window.addEventListener('click', e => {
+      if (!e.target.closest('.profile-container')) {
+        const p = document.getElementById('profile-popup');
+        if (p) p.style.display = 'none';
+      }
+    });
+  </script>
 </body>
 </html>

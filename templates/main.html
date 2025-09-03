@@ -1,59 +1,52 @@
 <!DOCTYPE html>
 <html lang="ru">
 <head>
-    <meta charset="UTF-8">
-    <title>Карта площадок</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.3/dist/leaflet.css" />
-    <script src="https://unpkg.com/leaflet@1.9.3/dist/leaflet.js"></script>
+  <meta charset="UTF-8">
+  <title>Карта площадок</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.3/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.3/dist/leaflet.js"></script>
 </head>
 <body>
-    <div class="top-bar">
-        <h2>Добро пожаловать, {{ user.first_name or "пользователь" }}</h2>
-        <div class="profile-container" onclick="toggleProfilePopup()">
-            <span class="profile-name">{{ user.first_name }} {{ user.last_name }}</span>
-            <div class="profile-popup" id="profile-popup">
-                <a href="/my-bookings">📋 Мои записи</a>
-                <a href="/logout">🚪 Выйти</a>
-            </div>
-        </div>
+  <div class="top-bar">
+    <h2>Добро пожаловать, {{ user.first_name or "пользователь" }}</h2>
+    <div class="profile-container" onclick="toggleProfilePopup()">
+      <span class="profile-name">{{ user.first_name }} {{ user.last_name }}</span>
+      <div class="profile-popup" id="profile-popup">
+        <a href="/my-bookings">📋 Мои записи</a>
+        <a href="/logout">🚪 Выйти</a>
+      </div>
     </div>
+  </div>
 
-    <div id="map" style="height: 80vh;"></div>
+  <div id="map" style="height:80vh;"></div>
 
-    <script>
-        const map = L.map('map').setView([55.9167, 37.8167], 12);
+  <script>
+    const map = L.map('map').setView([55.9167, 37.8167], 12);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OpenStreetMap' }).addTo(map);
 
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-            attribution: '© OpenStreetMap',
-        }).addTo(map);
+    const grounds = {{ grounds | tojson }};
+    grounds.forEach(place => {
+      if (place.latitude && place.longitude) {
+        L.marker([place.latitude, place.longitude]).addTo(map).bindPopup(`
+          <b>${place.school_name}</b><br>
+          ${place.address}<br>
+          <i>${place.sport_types ?? ''}</i><br>
+          <a href="/book/${place.id}">Записаться</a>
+        `);
+      }
+    });
 
-        const grounds = {{ grounds | tojson }};
-
-        grounds.forEach(place => {
-            if (place.latitude && place.longitude) {
-                L.marker([place.latitude, place.longitude])
-                    .addTo(map)
-                    .bindPopup(`
-                        <b>${place.school_name}</b><br>
-                        ${place.address}<br>
-                        <i>${place.sport_types}</i><br>
-                        <a href="/book/${place.id}">Записаться</a>
-                    `);
-            }
-        });
-
-        function toggleProfilePopup() {
-            const popup = document.getElementById("profile-popup");
-            popup.style.display = popup.style.display === "block" ? "none" : "block";
-        }
-
-        window.addEventListener("click", function (e) {
-            if (!e.target.closest(".profile-container")) {
-                const popup = document.getElementById("profile-popup");
-                if (popup) popup.style.display = "none";
-            }
-        });
-    </script>
+    function toggleProfilePopup(){
+      const p = document.getElementById('profile-popup');
+      p.style.display = p.style.display === 'block' ? 'none' : 'block';
+    }
+    window.addEventListener('click', e => {
+      if (!e.target.closest('.profile-container')) {
+        const p = document.getElementById('profile-popup');
+        if (p) p.style.display = 'none';
+      }
+    });
+  </script>
 </body>
 </html>

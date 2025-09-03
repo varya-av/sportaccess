@@ -1,62 +1,98 @@
-from flask import Flask, render_template, request, redirect, url_for, session, abort, jsonify
+from flask import Flask, render_template, request, redirect, url_for, session, abort, jsonify, flash, send_from_directory
 from flask_sqlalchemy import SQLAlchemy
 import time, hashlib, hmac, pandas as pd
 import os, json
 from urllib.parse import parse_qsl
+from datetime import datetime
 
-# === Токен бота. Можно положить в переменную окружения BOT_TOKEN, но оставляю хардкод как просил ===
+# === Telegram Bot Token (оставлен в коде по твоей просьбе) ===
 BOT_TOKEN = os.getenv("BOT_TOKEN", "7971252908:AAGfTw5shz1qRmioIOh_PYNSzEDEsyEAmUI")
 
 app = Flask(__name__)
 app.secret_key = os.urandom(32)
 
-# Куки сессии — безопасные настройки под HTTPS (Railway)
+# === Куки сессии: фикс для Telegram Web (iframe) ===
+# В web.telegram.org наши куки — третья сторона. Нужны Secure + SameSite=None.
 app.config.update(
-    SESSION_COOKIE_SECURE=True,   # только по HTTPS
-    SESSION_COOKIE_SAMESITE="Lax" # достаточный режим для WebView Telegram
+    SESSION_COOKIE_SECURE=True,
+    SESSION_COOKIE_SAMESITE="None"
 )
 
-# === База данных ===
+# === База ===
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///users.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
 
-
-# === Модель пользователя (только Telegram) ===
+# === Модели ===
 class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    tg_id = db.Column(db.String(50), unique=True, nullable=True)   # Telegram ID
+    tg_id = db.Column(db.String(50), unique=True, nullable=True)
     first_name = db.Column(db.String(100))
     last_name = db.Column(db.String(100))
     username = db.Column(db.String(100))
 
+class Booking(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, nullable=False, index=True)
+    ground_id = db.Column(db.Integer, nullable=False)
+    date = db.Column(db.String(10), nullable=False)   # YYYY-MM-DD
+    time = db.Column(db.String(5), nullable=False)    # HH:MM
+    comment = db.Column(db.String(500))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
-# ======= Маршруты =======
+# === Утилита: загрузка площадок из Excel ===
+def load_grounds():
+    path = 'data/grounds.xlsx'
+    if not os.path.exists(path):
+        abort(500, f'Файл {path} не найден на сервере')
+
+    df = pd.read_excel(path).rename(columns={
+        'Широта (lat)': 'latitude',
+        'Долгота (lon)': 'longitude',
+        'Название учреждения(краткое)': 'school_name',
+        'Адрес объекта': 'address',
+        'Для какого вида спорта предназначена (например футбол/баскетбол, футбольное поле, воркаут и тд.)': 'sport_types'
+    })[['latitude', 'longitude', 'school_name', 'address', 'sport_types']]
+
+    # запятые -> точки, конвертируем в float
+    df['latitude']  = pd.to_numeric(df['latitude'].astype(str).str.replace(',', '.', regex=False), errors='coerce')
+    df['longitude'] = pd.to_numeric(df['longitude'].astype(str).str.replace(',', '.', regex=False), errors='coerce')
+
+    df.dropna(subset=['latitude', 'longitude'], inplace=True)
+    df.reset_index(drop=True, inplace=True)
+    df['id'] = df.index
+    return df.to_dict(orient='records')
+
+# ======== Routes ========
 
 @app.route('/health')
 def health():
     return 'ok', 200
 
+@app.route('/favicon.ico')
+def favicon():
+    static_path = os.path.join(app.root_path, 'static')
+    ico_path = os.path.join(static_path, 'favicon.ico')
+    if os.path.exists(ico_path):
+        return send_from_directory(static_path, 'favicon.ico')
+    return ('', 204)
 
 @app.route('/')
 def index():
-    # Для Mini App всегда ведём на /webapp
+    # Для удобства открываем сразу Mini App-страницу
     return redirect(url_for('webapp_entry'))
 
-
-# План Б — вход через Login Widget (для обычных браузеров)
+# Запасной вход (для обычного браузера)
 @app.route('/login')
 def login():
     return render_template('login.html')
 
-
-# Стартовая страница Mini App (эту ссылку ставим в меню бота)
+# Mini App (WebApp) оболочка
 @app.route('/webapp')
 def webapp_entry():
-    return render_template('webapp.html')  # внутри Telegram WebApp возьмёт initData и авторизует
+    return render_template('webapp.html')
 
-
-# Приём и проверка initData из Telegram WebApp (POST из JS)
+# Приём initData из WebApp
 @app.route('/tg_webapp_auth', methods=['POST'])
 def tg_webapp_auth():
     init_data = request.form.get('init_data', '')
@@ -66,32 +102,28 @@ def tg_webapp_auth():
     if not verify_webapp_init_data(init_data):
         return "forbidden", 403
 
-    # Парсим initData → достаём user
-    data_pairs = dict(parse_qsl(init_data, keep_blank_values=True))
-    user_json = data_pairs.get('user')
+    pairs = dict(parse_qsl(init_data, keep_blank_values=True))
+    user_json = pairs.get('user')
     if not user_json:
         return "no user in init_data", 400
 
-    user_obj = json.loads(user_json)
-    tg_id = str(user_obj.get('id'))
-
+    u = json.loads(user_json)
+    tg_id = str(u.get('id'))
     user = User.query.filter_by(tg_id=tg_id).first()
     if not user:
         user = User(
             tg_id=tg_id,
-            first_name=user_obj.get('first_name'),
-            last_name=user_obj.get('last_name'),
-            username=user_obj.get('username')
+            first_name=u.get('first_name'),
+            last_name=u.get('last_name'),
+            username=u.get('username')
         )
         db.session.add(user)
         db.session.commit()
 
     session['user_id'] = user.id
-    # фронт после 200 перейдёт на /main
-    return jsonify(status="ok")
+    return jsonify(status='ok')
 
-
-# Login Widget (браузер): GET /tg_auth?id=...&first_name=...&hash=...
+# Login Widget (резервный вход через браузер OAuth)
 @app.route('/tg_auth')
 def tg_auth():
     data = request.args.to_dict()
@@ -113,8 +145,7 @@ def tg_auth():
     session['user_id'] = user.id
     return redirect(url_for('main'))
 
-
-# Главная страница с картой
+# Главная (карта)
 @app.route('/main')
 def main():
     user_id = session.get('user_id')
@@ -122,73 +153,110 @@ def main():
         return redirect(url_for('login'))
 
     user = User.query.get(user_id)
-
-    xlsx_path = 'data/grounds.xlsx'
-    if not os.path.exists(xlsx_path):
-        abort(500, f'Файл {xlsx_path} не найден на сервере')
-
-    # Читаем Excel и оставляем нужные поля
-    df = pd.read_excel(xlsx_path).rename(columns={
-        'Широта (lat)': 'latitude',
-        'Долгота (lon)': 'longitude',
-        'Название учреждения(краткое)': 'school_name',
-        'Адрес объекта': 'address',
-        'Для какого вида спорта предназначена (например футбол/баскетбол, футбольное поле, воркаут и тд.)': 'sport_types'
-    })[['latitude', 'longitude', 'school_name', 'address', 'sport_types']]
-
-    # Запятые → точки (иначе будут NaN)
-    df['latitude']  = pd.to_numeric(df['latitude'].astype(str).str.replace(',', '.', regex=False), errors='coerce')
-    df['longitude'] = pd.to_numeric(df['longitude'].astype(str).str.replace(',', '.', regex=False), errors='coerce')
-
-    # Чистим, даём ID
-    df.dropna(subset=['latitude', 'longitude'], inplace=True)
-    df.reset_index(drop=True, inplace=True)
-    df['id'] = df.index
-
-    grounds = df.to_dict(orient='records')
+    grounds = load_grounds()
     return render_template('main.html', user=user, grounds=grounds)
 
+# Бронирование площадки
+@app.route('/book/<int:ground_id>', methods=['GET', 'POST'])
+def book(ground_id):
+    user_id = session.get('user_id')
+    if not user_id:
+        return redirect(url_for('login'))
 
+    user = User.query.get(user_id)
+    grounds = load_grounds()
+    ground = next((g for g in grounds if g['id'] == ground_id), None)
+    if not ground:
+        abort(404, 'Площадка не найдена')
+
+    if request.method == 'POST':
+        date = request.form.get('date', '').strip()
+        time_str = request.form.get('time', '').strip()
+        comment = request.form.get('comment', '').strip()
+
+        if not date or not time_str:
+            flash('Укажите дату и время.')
+            return render_template('book.html', user=user, ground=ground)
+
+        b = Booking(user_id=user.id, ground_id=ground_id, date=date, time=time_str, comment=comment)
+        db.session.add(b)
+        db.session.commit()
+        flash('Запись создана.')
+        return redirect(url_for('my_bookings'))
+
+    return render_template('book.html', user=user, ground=ground)
+
+# Список моих записей
+@app.route('/my-bookings')
+def my_bookings():
+    user_id = session.get('user_id')
+    if not user_id:
+        return redirect(url_for('login'))
+
+    user = User.query.get(user_id)
+    bookings = Booking.query.filter_by(user_id=user_id).order_by(Booking.date, Booking.time).all()
+    grounds = {g['id']: g for g in load_grounds()}
+
+    items = []
+    for b in bookings:
+        g = grounds.get(b.ground_id, {})
+        items.append({
+            'id': b.id,
+            'date': b.date,
+            'time': b.time,
+            'comment': b.comment,
+            'school_name': g.get('school_name', '—'),
+            'address': g.get('address', '—'),
+            'sport_types': g.get('sport_types', '—'),
+        })
+
+    return render_template('my_bookings.html', user=user, items=items)
+
+# Отмена записи
+@app.route('/cancel/<int:booking_id>', methods=['POST'])
+def cancel_booking(booking_id):
+    user_id = session.get('user_id')
+    if not user_id:
+        return redirect(url_for('login'))
+
+    b = Booking.query.get_or_404(booking_id)
+    if b.user_id != user_id:
+        abort(403)
+
+    db.session.delete(b)
+    db.session.commit()
+    flash('Запись отменена.')
+    return redirect(url_for('my_bookings'))
+
+# Выход
 @app.route('/logout')
 def logout():
     session.clear()
     return redirect(url_for('login'))
 
+# ======== Верификация подписи ========
 
-# ======= Проверки подписи =======
-
-# 1) Login Widget проверяется как раньше (секрет = sha256(bot_token))
 def verify_telegram_auth(data: dict) -> bool:
     auth_date = data.get('auth_date')
     if not auth_date or time.time() - int(auth_date) > 86400:
         return False
-
     secret_key = hashlib.sha256(BOT_TOKEN.encode()).digest()
     check_hash = data.pop('hash', '')
     data_check_string = '\n'.join(sorted(f"{k}={v}" for k, v in data.items()))
-    calc_hash = hmac.new(secret_key, data_check_string.encode(), hashlib.sha256).hexdigest()
-    return hmac.compare_digest(calc_hash, check_hash)
+    calc = hmac.new(secret_key, data_check_string.encode(), hashlib.sha256).hexdigest()
+    return hmac.compare_digest(calc, check_hash)
 
-
-# 2) WebApp initData: секрет = HMAC_SHA256(key="WebAppData", msg=bot_token)
 def verify_webapp_init_data(init_data: str) -> bool:
     pairs = dict(parse_qsl(init_data, keep_blank_values=True))
-    hash_from_tg = pairs.pop('hash', None)
-    if not hash_from_tg:
+    tg_hash = pairs.pop('hash', None)
+    if not tg_hash:
         return False
-
-    # ключ от токена
     secret_key = hmac.new(b'WebAppData', BOT_TOKEN.encode(), hashlib.sha256).digest()
-
-    # k=v\nk=v... по отсортированным ключам
     data_check_string = '\n'.join(f"{k}={v}" for k, v in sorted(pairs.items(), key=lambda x: x[0]))
+    calc = hmac.new(secret_key, data_check_string.encode(), hashlib.sha256).hexdigest()
+    return hmac.compare_digest(calc, tg_hash)
 
-    # сверяем подпись
-    calc_hash = hmac.new(secret_key, data_check_string.encode(), hashlib.sha256).hexdigest()
-    return hmac.compare_digest(calc_hash, hash_from_tg)
-
-
-# === Запуск локально ===
+# === Локальный запуск ===
 if __name__ == '__main__':
     with app.app_context():
         db.create_all()

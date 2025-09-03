@@ -1,100 +1,58 @@
 <!DOCTYPE html>
 <html lang="ru">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Запись на площадку</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+  <meta charset="UTF-8">
+  <title>Бронирование — {{ ground.school_name }}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 </head>
 <body>
-    <div class="top-bar">
-        <h2>Запись на площадку: {{ ground.school_name }}</h2>
-        <div>
-            <a href="/main">На главную</a>
-        </div>
+  <div class="top-bar">
+    <h2>Бронирование площадки</h2>
+    <div class="profile-container" onclick="toggleProfilePopup()">
+      <span class="profile-name">{{ user.first_name }} {{ user.last_name }}</span>
+      <div class="profile-popup" id="profile-popup">
+        <a href="/main">🏠 На карту</a>
+        <a href="/my-bookings">📋 Мои записи</a>
+        <a href="/logout">🚪 Выйти</a>
+      </div>
     </div>
+  </div>
 
-    <div class="form-section">
-        <p><strong>Адрес:</strong> {{ ground.address }}</p>
-        <p><strong>Виды спорта:</strong> {{ ground.sport_types }}</p>
+  {% with messages = get_flashed_messages() %}
+    {% if messages %}
+      {% for m in messages %}<div class="flash">{{ m }}</div>{% endfor %}
+    {% endif %}
+  {% endwith %}
 
-        {% with messages = get_flashed_messages() %}
-          {% if messages %}
-            <div class="flash">
-              {% for message in messages %}
-                <p>{{ message }}</p>
-              {% endfor %}
-            </div>
-          {% endif %}
-        {% endwith %}
+  <div style="max-width:520px">
+    <p><b>{{ ground.school_name }}</b><br>{{ ground.address }}<br><i>{{ ground.sport_types }}</i></p>
 
-        <form method="POST">
-            <label for="date">Выберите дату:</label>
-            <input type="date" id="date" name="date" min="{{ today }}" required>
+    <form method="post" class="auth-form">
+      <label>Дата</label>
+      <input type="date" name="date" required>
 
-            <label>Выберите время:</label><br>
-            <div class="time-slots">
-            {% for slot in time_slots %}
-                {% if slot in booked_slots %}
-                    <label class="disabled">
-                        <input type="radio" name="time" value="{{ slot }}" disabled>
-                        {{ slot }} (занято)
-                    </label>
-                {% else %}
-                    <label>
-                        <input type="radio" name="time" value="{{ slot }}">
-                        {{ slot }}
-                    </label>
-                {% endif %}
-            {% endfor %}
-            </div>
+      <label>Время</label>
+      <input type="time" name="time" required>
 
-            <!-- сохраняем дату и время из параметров URL -->
-            <input type="hidden" name="from_date" value="{{ request.args.get('date') }}">
-            <input type="hidden" name="from_time" value="{{ request.args.get('time') }}">
+      <label>Комментарий (необязательно)</label>
+      <input type="text" name="comment" placeholder="Например, школьная секция">
 
-            <button type="submit">Подтвердить запись</button>
-        </form>
+      <button type="submit">Создать запись</button>
+      <a href="/main" style="margin-left:10px">Отмена</a>
+    </form>
+  </div>
 
-        <div class="team-list" id="group-info" style="display:none;">
-            <h3>Уже записались:</h3>
-            <ul id="group-list"></ul>
-        </div>
-    </div>
-
-<script>
-document.addEventListener("DOMContentLoaded", function () {
-    const dateInput = document.querySelector('input[name="date"]');
-    const timeInputs = document.querySelectorAll('input[name="time"]');
-    const groupBox = document.getElementById("group-info");
-    const groupList = document.getElementById("group-list");
-    const groundId = "{{ ground.id }}";
-
-    function updateGroup() {
-        const date = dateInput.value;
-        const time = document.querySelector('input[name="time"]:checked')?.value;
-        if (date && time) {
-            fetch(`/group-check?ground_id=${groundId}&date=${date}&time=${time}`)
-                .then(res => res.json())
-                .then(data => {
-                    groupList.innerHTML = "";
-                    if (data.length > 0) {
-                        groupBox.style.display = "block";
-                        data.forEach(u => {
-                            const li = document.createElement("li");
-                            li.textContent = `${u.first_name} ${u.last_name}`;
-                            groupList.appendChild(li);
-                        });
-                    } else {
-                        groupBox.style.display = "none";
-                    }
-                });
-        }
+  <script>
+    function toggleProfilePopup(){
+      const p = document.getElementById('profile-popup');
+      p.style.display = p.style.display === 'block' ? 'none' : 'block';
     }
-
-    dateInput.addEventListener("change", updateGroup);
-    timeInputs.forEach(input => input.addEventListener("change", updateGroup));
-});
-</script>
+    window.addEventListener('click', e => {
+      if (!e.target.closest('.profile-container')) {
+        const p = document.getElementById('profile-popup');
+        if (p) p.style.display = 'none';
+      }
+    });
+  </script>
 </body>
 </html>
