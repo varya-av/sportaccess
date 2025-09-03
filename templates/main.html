@@ -14,6 +14,7 @@
       <span class="profile-name">{{ user.first_name }} {{ user.last_name }}</span>
       <div class="profile-popup" id="profile-popup">
         <a href="/my-bookings">📋 Мои записи</a>
+        {% if is_admin %}<a href="/admin">🛠 Админка</a>{% endif %}
         <a href="/logout">🚪 Выйти</a>
       </div>
     </div>
@@ -29,9 +30,9 @@
     grounds.forEach(place => {
       if (place.latitude && place.longitude) {
         L.marker([place.latitude, place.longitude]).addTo(map).bindPopup(`
-          <b>${place.school_name}</b><br>
-          ${place.address}<br>
-          <i>${place.sport_types ?? ''}</i><br>
+          <b>${place.school_name || ''}</b><br>
+          ${place.address || ''}<br>
+          <i>${place.sport_types || ''}</i><br>
           <a href="/book/${place.id}">Записаться</a>
         `);
       }
