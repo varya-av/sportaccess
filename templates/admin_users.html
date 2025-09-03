@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <title>Админ · Пользователи</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+  <div class="top-bar">
+    <h2>Пользователи ({{ users|length }})</h2>
+    <div class="profile-container">
+      <a href="/admin/bookings">📋 Все записи</a>
+      <a href="/main" style="margin-left:10px">🏠 На карту</a>
+    </div>
+  </div>
+
+  <table class="booking-table">
+    <thead>
+      <tr>
+        <th>ID</th>
+        <th>Имя</th>
+        <th>Username</th>
+        <th>TG ID</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for u in users %}
+      <tr>
+        <td>{{ u.id }}</td>
+        <td>{{ (u.first_name or '') ~ ' ' ~ (u.last_name or '') }}</td>
+        <td>@{{ u.username or '—' }}</td>
+        <td>{{ u.tg_id or '—' }}</td>
+        <td><a href="/admin/user/{{ u.id }}">Открыть</a></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</body>
+</html>

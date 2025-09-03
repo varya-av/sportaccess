@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <title>Админ · {{ (u.first_name or '') ~ ' ' ~ (u.last_name or '') }}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+  <div class="top-bar">
+    <h2>{{ (u.first_name or '') ~ ' ' ~ (u.last_name or '') }} (@{{ u.username or '—' }})</h2>
+    <div class="profile-container">
+      <a href="/admin/users">👈 Назад к пользователям</a>
+      <a href="/admin/bookings" style="margin-left:10px">📋 Все записи</a>
+      <a href="/main" style="margin-left:10px">🏠 На карту</a>
+    </div>
+  </div>
+
+  <p class="muted" style="margin:10px 0 20px 0">TG ID: <b>{{ u.tg_id or '—' }}</b>, внутренний ID: <b>{{ u.id }}</b></p>
+
+  {% if items %}
+    <table class="booking-table">
+      <thead>
+        <tr>
+          <th>Дата</th><th>Время</th><th>Площадка</th><th>Адрес</th><th>Вид спорта</th><th>Комментарий</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for b in items %}
+        <tr>
+          <td>{{ b.date }}</td>
+          <td>{{ b.time }}</td>
+          <td>{{ b.school_name }}</td>
+          <td>{{ b.address }}</td>
+          <td>{{ b.sport_types }}</td>
+          <td>{{ b.comment or '' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="no-bookings">У пользователя нет записей.</p>
+  {% endif %}
+</body>
+</html>

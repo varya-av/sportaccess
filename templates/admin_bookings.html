@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <title>Админ · Все записи</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+  <div class="top-bar">
+    <h2>Все записи ({{ items|length }})</h2>
+    <div class="profile-container">
+      <a href="/admin/users">👥 Пользователи</a>
+      <a href="/main" style="margin-left:10px">🏠 На карту</a>
+    </div>
+  </div>
+
+  <table class="booking-table">
+    <thead>
+      <tr>
+        <th>Дата</th>
+        <th>Время</th>
+        <th>Площадка</th>
+        <th>Адрес</th>
+        <th>Вид спорта</th>
+        <th>Пользователь</th>
+        <th>Username</th>
+        <th>TG ID</th>
+        <th>Комментарий</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for x in items %}
+      <tr>
+        <td>{{ x.date }}</td>
+        <td>{{ x.time }}</td>
+        <td>{{ x.school_name }}</td>
+        <td>{{ x.address }}</td>
+        <td>{{ x.sport_types }}</td>
+        <td><a href="/admin/user/{{ x.user_id }}">{{ x.user_name }}</a></td>
+        <td>@{{ x.username }}</td>
+        <td>{{ x.tg_id }}</td>
+        <td>{{ x.comment or '' }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</body>
+</html>
