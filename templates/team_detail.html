@@ -15,6 +15,12 @@
     </div>
   </div>
 
+  {% with messages = get_flashed_messages() %}
+    {% if messages %}
+      {% for m in messages %}<div class="flash">{{ m }}</div>{% endfor %}
+    {% endif %}
+  {% endwith %}
+
   <p>
     <b>Когда:</b> {{ team.date }} {{ team.time }}<br>
     <b>Площадка:</b> {{ gnd.school_name }} — {{ gnd.address }}<br>
@@ -31,7 +37,7 @@
       {% endfor %}
     </ul>
   {% else %}
-    <p class="muted">Пока нет участников.</p>
+    <p class="no-bookings">Пока нет участников.</p>
   {% endif %}
 
   <div style="margin-top:16px">

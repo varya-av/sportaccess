@@ -8,12 +8,10 @@
 <body>
   <div class="top-bar">
     <h2>Мои записи</h2>
-    <div class="profile-container" onclick="toggleProfilePopup()">
-      <span class="profile-name">{{ user.first_name }} {{ user.last_name }}</span>
-      <div class="profile-popup" id="profile-popup">
-        <a href="/main">🏠 На карту</a>
-        <a href="/logout">🚪 Выйти</a>
-      </div>
+    <div class="profile-container">
+      <a href="/main">🏠 На карту</a>
+      <a href="/teams" style="margin-left:10px">⚽ Открытые команды</a>
+      <a href="/my-teams" style="margin-left:10px">👥 Мои команды</a>
     </div>
   </div>
 
@@ -26,18 +24,19 @@
   {% if items %}
     <table class="booking-table">
       <thead><tr>
-        <th>Дата</th><th>Время</th><th>Площадка</th><th>Адрес</th><th>Вид спорта</th><th></th>
+        <th>Дата</th><th>Время</th><th>Площадка</th><th>Адрес</th><th>Вид спорта</th><th>Комментарий</th><th></th>
       </tr></thead>
       <tbody>
-      {% for b in items %}
+      {% for x in items %}
         <tr>
-          <td>{{ b.date }}</td>
-          <td>{{ b.time }}</td>
-          <td>{{ b.school_name }}</td>
-          <td>{{ b.address }}</td>
-          <td>{{ b.sport_types }}</td>
+          <td>{{ x.date }}</td>
+          <td>{{ x.time }}</td>
+          <td>{{ x.school_name }}</td>
+          <td>{{ x.address }}</td>
+          <td>{{ x.sport_types }}</td>
+          <td>{{ x.comment or '' }}</td>
           <td>
-            <form method="post" action="/cancel/{{ b.id }}" onsubmit="return confirm('Отменить запись?')">
+            <form method="post" action="/cancel/{{ x.id }}" onsubmit="return confirm('Отменить запись?')">
               <button class="btn-danger">Отменить</button>
             </form>
           </td>
@@ -48,18 +47,5 @@
   {% else %}
     <p class="no-bookings">Записей пока нет.</p>
   {% endif %}
-
-  <script>
-    function toggleProfilePopup(){
-      const p = document.getElementById('profile-popup');
-      p.style.display = p.style.display === 'block' ? 'none' : 'block';
-    }
-    window.addEventListener('click', e => {
-      if (!e.target.closest('.profile-container')) {
-        const p = document.getElementById('profile-popup');
-        if (p) p.style.display = 'none';
-      }
-    });
-  </script>
 </body>
 </html>
