@@ -3,7 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Вход через Telegram</title>
+  <title>Войти через Telegram</title>
+  <!-- опционально: ваш общий стиль -->
   <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
   <style>
     body{display:flex;align-items:center;justify-content:center;min-height:100vh;background:#f7fbff}
@@ -12,8 +13,7 @@
     p{margin:6px 0 14px;color:#406080}
     .help{font-size:13px;color:#6e8ba6}
     .hr{height:1px;background:#e6eff7;margin:16px 0}
-    .fallback{margin-top:10px}
-    .fallback a{display:inline-block;padding:10px 14px;border:1px solid #b2d4ff;border-radius:10px;text-decoration:none}
+    .fallback-btn{display:none;margin-top:8px;padding:.7rem 1rem;border:1px solid #b2d4ff;border-radius:10px;text-decoration:none}
     .err{margin-top:12px;color:#b01030;font-size:13px;display:none}
   </style>
 </head>
@@ -22,6 +22,7 @@
     <h1>Войти через Telegram</h1>
     <p>Нажмите кнопку ниже. Мы не получаем доступа к переписке — только публичные данные профиля (имя, username, id).</p>
 
+    <!-- Кнопка виджета Telegram (работает в обычных браузерах) -->
     <div id="tg-button">
       <script async src="https://telegram.org/js/telegram-widget.js?7"
               data-telegram-login="SportCityKorolevBot"
@@ -33,27 +34,37 @@
     </div>
 
     <div class="hr"></div>
-    <p class="help">Если кнопка не появилась в течение 2–3 секунд:</p>
-    <ol class="help">
-      <li>Откройте страницу заново обычным браузером (не во «встроенном» браузере Telegram).</li>
-      <li>Проверьте, не блокирует ли сеть загрузку <code>telegram.org</code>.</li>
-      <li>Проверьте прямую загрузку: <a target="_blank" rel="noopener" href="https://telegram.org/js/telegram-widget.js?7">скрипт</a>.</li>
+
+    <p class="help">Если кнопка не появилась в течение 2–3 секунд (например, из-за блокировок <code>telegram.org</code>):</p>
+    <ol class="help" style="margin-top:-6px">
+      <li>Откройте страницу заново <b>в обычном браузере</b> (не во встроенном браузере Telegram).</li>
+      <li>Либо используйте резервный вход ниже — он откроет официальный Telegram OAuth.</li>
     </ol>
 
-    <div id="err" class="err"></div>
+    <!-- Fallback OAuth-ссылка (покажем автоматически, если виджет не загрузился) -->
+    <a id="fallbackLink" class="fallback-btn" href="#" rel="noopener">Войти через Telegram (резервный способ)</a>
 
-    <div class="fallback">
-      <a href="/" onclick="location.reload();return false;">Перезагрузить страницу</a>
-    </div>
+    <div id="err" class="err"></div>
   </div>
 
   <script>
+    // Сформируем fallback OAuth-ссылку динамически под текущий домен
+    (function () {
+      const origin = encodeURIComponent(window.location.origin);
+      const returnTo = encodeURIComponent('/tg_auth');
+      const url = `https://oauth.telegram.org/auth?bot=SportCityKorolevBot&origin=${origin}&request_access=write&return_to=${returnTo}`;
+      const a = document.getElementById('fallbackLink');
+      a.setAttribute('href', url);
+    })();
+
+    // Если виджет не появился за 2.5 сек — показываем ошибку и fallback-кнопку
     setTimeout(() => {
-      const btn = document.querySelector('#tg-button .telegram-login-widget');
-      if (!btn) {
-        const e = document.getElementById('err');
-        e.style.display = 'block';
-        e.textContent = 'Кнопка Telegram не загрузилась. Проверьте соединение/блокировки.';
+      const hasWidget = document.querySelector('#tg-button .telegram-login-widget');
+      if (!hasWidget) {
+        const err = document.getElementById('err');
+        err.style.display = 'block';
+        err.textContent = 'Кнопка Telegram не загрузилась. Проверьте соединение/блокировки или используйте резервный вход.';
+        document.getElementById('fallbackLink').style.display = 'inline-block';
       }
     }, 2500);
   </script>
