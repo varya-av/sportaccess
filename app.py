@@ -625,6 +625,19 @@ def admin_user_detail(user_id):
         })
     return render_template('admin_user.html', u=u, items=items)
 
+# --- Автоинициализация БД при импорте (важно для gunicorn) ---
+def _ensure_db():
+    try:
+        with app.app_context():
+            db.create_all()
+            # опционально: можно сделать db.session.commit()
+    except Exception as e:
+        # Просто лог — чтобы не уронить импорт
+        print("DB init error:", e)
+
+_ensure_db()
+# --------------------------------------------------------------
+
 # =======================
 #  Запуск
 # =======================
