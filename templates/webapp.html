@@ -41,7 +41,7 @@
       tg.ready();
       tg.expand();
 
-      const initData = tg.initData;
+      const initData = tg.initData;   // подписанные данные от Telegram
       if(!initData){
         show('err', 'initData пустой. Запустите мини-приложение из бота.');
       }else{
@@ -51,7 +51,7 @@
         fetch('/tg_webapp_auth', {
           method:'POST',
           body: form,
-          credentials: 'include'  // важно для cookies сессии во встроенном браузере
+          credentials: 'include'  // важно, чтобы сохранить cookie сессии во WebView
         })
           .then(r => {
             if(!r.ok) throw new Error('Auth failed: ' + r.status);

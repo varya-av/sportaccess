@@ -4,11 +4,17 @@ import time, hashlib, hmac, pandas as pd
 import os, json
 from urllib.parse import parse_qsl
 
-# === Константы ===
-BOT_TOKEN = '7971252908:AAGfTw5shz1qRmioIOh_PYNSzEDEsyEAmUI'  # твой текущий токен бота @SportCityKorolevBot
+# === Токен бота. Можно положить в переменную окружения BOT_TOKEN, но оставляю хардкод как просил ===
+BOT_TOKEN = os.getenv("BOT_TOKEN", "7971252908:AAGfTw5shz1qRmioIOh_PYNSzEDEsyEAmUI")
 
 app = Flask(__name__)
 app.secret_key = os.urandom(32)
+
+# Куки сессии — безопасные настройки под HTTPS (Railway)
+app.config.update(
+    SESSION_COOKIE_SECURE=True,   # только по HTTPS
+    SESSION_COOKIE_SAMESITE="Lax" # достаточный режим для WebView Telegram
+)
 
 # === База данных ===
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///users.db'
@@ -34,17 +40,17 @@ def health():
 
 @app.route('/')
 def index():
-    # По умолчанию открываем WebApp-вход (для мини-приложения)
+    # Для Mini App всегда ведём на /webapp
     return redirect(url_for('webapp_entry'))
 
 
-# План Б — вход через Login Widget (нужен, если открывают в обычном браузере)
+# План Б — вход через Login Widget (для обычных браузеров)
 @app.route('/login')
 def login():
     return render_template('login.html')
 
 
-# Стартовая страница WebApp (эту ссылку указываем в меню бота)
+# Стартовая страница Mini App (эту ссылку ставим в меню бота)
 @app.route('/webapp')
 def webapp_entry():
     return render_template('webapp.html')  # внутри Telegram WebApp возьмёт initData и авторизует
@@ -58,10 +64,9 @@ def tg_webapp_auth():
         return "no init_data", 400
 
     if not verify_webapp_init_data(init_data):
-        print("WEBAPP AUTH FAIL")  # смотри в Railway → Logs
         return "forbidden", 403
 
-    # Парсим initData → достаем user
+    # Парсим initData → достаём user
     data_pairs = dict(parse_qsl(init_data, keep_blank_values=True))
     user_json = data_pairs.get('user')
     if not user_json:
@@ -152,7 +157,7 @@ def logout():
 
 # ======= Проверки подписи =======
 
-# Login Widget проверяется как раньше (секрет = sha256(bot_token))
+# 1) Login Widget проверяется как раньше (секрет = sha256(bot_token))
 def verify_telegram_auth(data: dict) -> bool:
     auth_date = data.get('auth_date')
     if not auth_date or time.time() - int(auth_date) > 86400:
@@ -164,18 +169,21 @@ def verify_telegram_auth(data: dict) -> bool:
     calc_hash = hmac.new(secret_key, data_check_string.encode(), hashlib.sha256).hexdigest()
     return hmac.compare_digest(calc_hash, check_hash)
 
-# WebApp initData: секрет = HMAC_SHA256(key="WebAppData", msg=bot_token)
+
+# 2) WebApp initData: секрет = HMAC_SHA256(key="WebAppData", msg=bot_token)
 def verify_webapp_init_data(init_data: str) -> bool:
     pairs = dict(parse_qsl(init_data, keep_blank_values=True))
     hash_from_tg = pairs.pop('hash', None)
     if not hash_from_tg:
         return False
 
-    # 1) ключ от токена
+    # ключ от токена
     secret_key = hmac.new(b'WebAppData', BOT_TOKEN.encode(), hashlib.sha256).digest()
-    # 2) k=v\nk=v... по отсортированным ключам
+
+    # k=v\nk=v... по отсортированным ключам
     data_check_string = '\n'.join(f"{k}={v}" for k, v in sorted(pairs.items(), key=lambda x: x[0]))
-    # 3) сверяем подпись
+
+    # сверяем подпись
     calc_hash = hmac.new(secret_key, data_check_string.encode(), hashlib.sha256).hexdigest()
     return hmac.compare_digest(calc_hash, hash_from_tg)
 
