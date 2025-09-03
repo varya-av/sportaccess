@@ -1,228 +1,59 @@
+<!DOCTYPE html>
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Карта спортивных площадок</title>
+    <title>Карта площадок</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
-    <script src="https://api-maps.yandex.ru/2.1/?lang=ru_RU" type="text/javascript"></script>
-    <style>
-        #map {
-            width: 100%;
-            height: 600px;
-            margin-top: 20px;
-            border-radius: 12px;
-            box-shadow: 0 3px 12px rgba(0, 0, 0, 0.1);
-        }
-        .controls {
-            margin-top: 10px;
-            background: #fff;
-            padding: 15px 20px;
-            border-radius: 8px;
-            box-shadow: 0 2px 8px rgba(0, 122, 204, 0.1);
-            display: inline-block;
-        }
-        label {
-            font-weight: 500;
-            margin-right: 10px;
-        }
-        select {
-            padding: 8px 12px;
-            font-size: 15px;
-            border: 1px solid #00aa88;
-            border-radius: 6px;
-            background-color: #fefefe;
-        }
-        .top-bar {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            background: #e6f3ff;
-            padding: 14px 20px;
-            border-radius: 10px;
-            margin-bottom: 20px;
-            box-shadow: 0 3px 10px rgba(0, 122, 204, 0.1);
-        }
-        .top-bar h2 {
-            margin: 0;
-            color: #007acc;
-            font-size: 22px;
-        }
-
-        .profile-container {
-            position: relative;
-            cursor: pointer;
-        }
-
-        .profile-name {
-            font-weight: 600;
-            color: #007acc;
-        }
-
-        .profile-popup {
-            display: none;
-            position: absolute;
-            right: 0;
-            top: 130%;
-            background: #fff;
-            border: 1px solid #ccc;
-            border-radius: 6px;
-            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
-            z-index: 99;
-            min-width: 180px;
-        }
-
-        .profile-popup a,
-        .profile-popup form button {
-            display: block;
-            width: 100%;
-            padding: 10px 15px;
-            text-align: left;
-            border: none;
-            background: none;
-            font-size: 14px;
-            color: #007acc;
-            cursor: pointer;
-        }
-
-        .profile-popup a:hover,
-        .profile-popup form button:hover {
-            background-color: #f0f8ff;
-        }
-
-        .profile-popup form {
-            margin: 0;
-        }
-        .btn-danger {
-            background: #ff4d4f;
-            color: white;
-            padding: 10px 16px;
-            border: none;
-            border-radius: 6px;
-            font-weight: bold;
-            cursor: pointer;
-            transition: background 0.3s ease;
-        }
-        .btn-danger:hover {
-            background: #e63b3d;
-        }
-    </style>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.3/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.3/dist/leaflet.js"></script>
 </head>
 <body>
-
-<div class="top-bar">
-    <h2>Карта спортивных площадок города</h2>
-    <div style="display: flex; align-items: center; gap: 15px;">
-        <a href="/my-bookings" class="profile-link">Мои записи</a>
+    <div class="top-bar">
+        <h2>Добро пожаловать, {{ user.first_name or "пользователь" }}</h2>
         <div class="profile-container" onclick="toggleProfilePopup()">
             <span class="profile-name">{{ user.first_name }} {{ user.last_name }}</span>
             <div class="profile-popup" id="profile-popup">
-                <a href="/logout">Выйти</a>
-                <form method="POST" action="/delete-profile" onsubmit="return confirm('Вы уверены, что хотите удалить профиль и все записи?');">
-                    <button type="submit" class="btn-danger">Удалить профиль</button>
-                </form>
+                <a href="/my-bookings">📋 Мои записи</a>
+                <a href="/logout">🚪 Выйти</a>
             </div>
         </div>
     </div>
-</div>
 
-<div class="controls">
-    <label for="sport-select">Фильтр по виду спорта:</label>
-    <select id="sport-select">
-        <option value="all">Все</option>
-        <option value="Футбол">Футбол</option>
-        <option value="Баскетбол">Баскетбол</option>
-        <option value="Волейбол">Волейбол</option>
-        <option value="Гандбол">Гандбол</option>
-        <option value="Воркаут">Воркаут</option>
-    </select>
-</div>
+    <div id="map" style="height: 80vh;"></div>
 
-<div id="map"></div>
+    <script>
+        const map = L.map('map').setView([55.9167, 37.8167], 12);
 
-<script>
-    const grounds = {{ grounds | tojson }};
-    const colors = {
-        "Футбол": "green",
-        "Баскетбол": "blue",
-        "Волейбол": "orange",
-        "Гандбол": "red",
-        "Воркаут": "purple"
-    };
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '© OpenStreetMap',
+        }).addTo(map);
 
-    let map;
-    let placemarks = [];
+        const grounds = {{ grounds | tojson }};
 
-    ymaps.ready(function () {
-        map = new ymaps.Map("map", {
-            center: [55.9167, 37.8167],
-            zoom: 12
-        });
-
-        loadPlacemarks("all");
-
-        document.getElementById("sport-select").addEventListener("change", function () {
-            const selectedSport = this.value;
-            clearPlacemarks();
-            loadPlacemarks(selectedSport);
-        });
-    });
-
-    function getToday() {
-        const today = new Date();
-        return today.toISOString().split("T")[0];
-    }
-
-    function loadPlacemarks(filter) {
-        grounds.forEach(g => {
-            const sports = g.sport_types.toLowerCase();
-            if (filter === "all" || sports.includes(filter.toLowerCase())) {
-                const color = colors[detectSport(g.sport_types)] || "gray";
-
-                const balloonHtml = `
-                    <strong>${g.school_name}</strong><br>
-                    ${g.address}<br>
-                    <em>${g.sport_types}</em><br><br>
-                    <a href="/book/${g.id}?date=${getToday()}&time=10:00">Записаться</a>
-                `;
-
-                const placemark = new ymaps.Placemark([g.latitude, g.longitude], {
-                    balloonContent: balloonHtml
-                }, {
-                    preset: 'islands#icon',
-                    iconColor: color
-                });
-
-                map.geoObjects.add(placemark);
-                placemarks.push(placemark);
+        grounds.forEach(place => {
+            if (place.latitude && place.longitude) {
+                L.marker([place.latitude, place.longitude])
+                    .addTo(map)
+                    .bindPopup(`
+                        <b>${place.school_name}</b><br>
+                        ${place.address}<br>
+                        <i>${place.sport_types}</i><br>
+                        <a href="/book/${place.id}">Записаться</a>
+                    `);
             }
         });
-    }
 
-    function clearPlacemarks() {
-        placemarks.forEach(p => map.geoObjects.remove(p));
-        placemarks = [];
-    }
-
-    function detectSport(types) {
-        for (let sport in colors) {
-            if (types.toLowerCase().includes(sport.toLowerCase())) {
-                return sport;
-            }
-        }
-        return "other";
-    }
-
-    function toggleProfilePopup() {
-        const popup = document.getElementById("profile-popup");
-        popup.style.display = popup.style.display === "block" ? "none" : "block";
-    }
-
-    window.addEventListener("click", function (e) {
-        if (!e.target.closest(".profile-container")) {
+        function toggleProfilePopup() {
             const popup = document.getElementById("profile-popup");
-            if (popup) popup.style.display = "none";
+            popup.style.display = popup.style.display === "block" ? "none" : "block";
         }
-    });
-</script>
+
+        window.addEventListener("click", function (e) {
+            if (!e.target.closest(".profile-container")) {
+                const popup = document.getElementById("profile-popup");
+                if (popup) popup.style.display = "none";
+            }
+        });
+    </script>
 </body>
 </html>

@@ -1,33 +1,7 @@
-<!DOCTYPE html>
-<html lang="ru">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Вход</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
-</head>
-<body>
-    <div class="auth-container">
-        <h2>Вход по номеру телефона</h2>
-
-        {% with messages = get_flashed_messages() %}
-          {% if messages %}
-            <div class="flash">
-              {% for message in messages %}
-                <p>{{ message }}</p>
-              {% endfor %}
-            </div>
-          {% endif %}
-        {% endwith %}
-
-        <form method="POST" class="auth-form">
-            <label for="phone">Телефон:</label>
-            <input type="tel" name="phone" id="phone" placeholder="+7XXXXXXXXXX" required>
-
-            <button type="submit">Войти</button>
-        </form>
-
-        <p style="margin-top: 20px;">Нет аккаунта? <a href="/">Зарегистрироваться</a></p>
-    </div>
-</body>
-</html>
+<script async src="https://telegram.org/js/telegram-widget.js?7"
+        data-telegram-login="SportCityKorolevBot"   <!-- был SportAccessRegBot -->
+        data-size="large"
+        data-userpic="false"
+        data-auth-url="https://glamorous-wash-production.up.railway.app/tg_auth"
+        data-request-access="write">
+</script>
