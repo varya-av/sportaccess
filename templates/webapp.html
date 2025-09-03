@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>SportCity — вход</title>
+  <style>
+    body{margin:0;font-family:system-ui,Segoe UI,Roboto,Arial;background:#f7fbff;color:#0b3558}
+    .wrap{min-height:100vh;display:flex;align-items:center;justify-content:center}
+    .card{background:#fff;border:1px solid #e6eff7;border-radius:12px;box-shadow:0 6px 18px rgba(0,0,0,.06);padding:22px;max-width:520px;width:92%}
+    .muted{color:#6e8ba6;font-size:14px}
+    .err{color:#b01030;margin-top:10px;display:none}
+    .ok{color:#1a7f37;margin-top:10px;display:none}
+  </style>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <h2>Открываем мини-приложение…</h2>
+      <p class="muted">Если вы видите это в обычном браузере, откройте страницу из чата бота Telegram.</p>
+      <div id="msg" class="muted">Пробуем авторизоваться…</div>
+      <div id="ok" class="ok">Авторизация прошла, загружаем карту…</div>
+      <div id="err" class="err"></div>
+    </div>
+  </div>
+
+  <script>
+    const tg = window.Telegram?.WebApp;
+
+    function show(id, text){
+      const el = document.getElementById(id);
+      if(text) el.textContent = text;
+      el.style.display = 'block';
+    }
+
+    if(!tg){
+      show('err', 'Это не Telegram WebApp. Откройте ссылку из бота.');
+    }else{
+      tg.ready();
+      // (необязательно) сделать full-screen
+      tg.expand();
+
+      // В initData Telegram кладёт подписанные параметры
+      const initData = tg.initData;
+      if(!initData){
+        show('err', 'initData пустой. Запустите мини-приложение из бота.');
+      }else{
+        // Отправляем на бэкенд для проверки подписи и создания сессии
+        const form = new FormData();
+        form.append('init_data', initData);
+
+        fetch('/tg_webapp_auth', { method:'POST', body: form })
+          .then(r => {
+            if(!r.ok) throw new Error('Auth failed: ' + r.status);
+            return r.json();
+          })
+          .then(() => {
+            show('ok');
+            // переходим на основную страницу
+            window.location.href = '/main';
+          })
+          .catch(e => show('err', e.message));
+      }
+    }
+  </script>
+</body>
+</html>
