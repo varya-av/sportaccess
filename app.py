@@ -22,7 +22,7 @@ ADMIN_TG_IDS = [s.strip() for s in os.getenv("ADMIN_TG_IDS", "532064703").split(
 app = Flask(__name__)
 app.secret_key = os.urandom(32)
 
-# Фикс авторизации в Telegram Web (iframe): куки третьей стороны должны быть Secure + SameSite=None
+# Фикс для Telegram Web (iframe): куки должны быть Secure + SameSite=None
 app.config.update(
     SESSION_COOKIE_SECURE=True,
     SESSION_COOKIE_SAMESITE="None",
@@ -65,10 +65,6 @@ class Team(db.Model):
     max_size = db.Column(db.Integer, default=10)
     is_open = db.Column(db.Boolean, default=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
-
-    __table_args__ = (
-        # одна открытая команда с тем же слотом допускается; уникальности не навязываем жёстко
-    )
 
 
 class TeamMember(db.Model):
@@ -275,7 +271,7 @@ def main():
 
 @app.route('/book/<int:ground_id>', methods=['GET', 'POST'])
 def book(ground_id):
-    """Страница записи + создание команды при желании."""
+    """Страница записи + при желании создание команды."""
     user_id = session.get('user_id')
     if not user_id:
         return redirect(url_for('login'))
@@ -287,7 +283,28 @@ def book(ground_id):
         abort(404, 'Площадка не найдена')
 
     # Открытые команды на этой площадке (для блока "Присоединиться")
-    open_teams = Team.query.filter_by(ground_id=ground_id, is_open=True).order_by(Team.date, Team.time).all()
+    teams_q = Team.query.filter_by(ground_id=ground_id, is_open=True).order_by(Team.date, Team.time)
+    open_teams = teams_q.all()
+
+    # Счётчики участников по командам
+    team_ids = [t.id for t in open_teams]
+    members_map = {tid: 0 for tid in team_ids}
+    if team_ids:
+        for tm in TeamMember.query.filter(TeamMember.team_id.in_(team_ids)).all():
+            members_map[tm.team_id] = members_map.get(tm.team_id, 0) + 1
+
+    open_items = []
+    for t in open_teams:
+        open_items.append({
+            "id": t.id,
+            "name": t.name,
+            "date": t.date,
+            "time": t.time,
+            "sport": t.sport or (ground.get('sport_types') or ''),
+            "max_size": t.max_size,
+            "members": members_map.get(t.id, 0),
+            "is_open": t.is_open
+        })
 
     if request.method == 'POST':
         mode = request.form.get('mode', 'solo')  # solo | team_create
@@ -297,10 +314,10 @@ def book(ground_id):
 
         if not date or not tm:
             flash('Укажите дату и время.')
-            return render_template('book.html', user=user, ground=ground, open_teams=open_teams)
+            return render_template('book.html', user=user, ground=ground, open_items=open_items)
 
         if mode == 'team_create':
-            team_name = request.form.get('team_name', '').strip() or f"Команда {user.first_name or user.username or user.id}"
+            team_name = (request.form.get('team_name') or '').strip() or f"Команда {user.first_name or user.username or user.id}"
             max_size = request.form.get('max_size', '10')
             try:
                 max_size = max(2, min(50, int(max_size)))
@@ -318,25 +335,23 @@ def book(ground_id):
                 is_open=True
             )
             db.session.add(team)
-            db.session.flush()  # получим team.id, не коммитя транзакцию
+            db.session.flush()  # нужен team.id
 
-            # владелец сразу становится участником
-            tmemb = TeamMember(team_id=team.id, user_id=user.id, role='owner')
-            db.session.add(tmemb)
+            db.session.add(TeamMember(team_id=team.id, user_id=user.id, role='owner'))
             db.session.commit()
 
             flash('Команда создана. Пригласите участников или позвольте им присоединиться.')
             return redirect(url_for('team_detail', team_id=team.id))
 
-        else:
-            # обычная личная запись
-            b = Booking(user_id=user.id, ground_id=ground_id, date=date, time=tm, comment=comment)
-            db.session.add(b)
-            db.session.commit()
-            flash('Запись создана.')
-            return redirect(url_for('my_bookings'))
+        # Личная запись
+        b = Booking(user_id=user.id, ground_id=ground_id, date=date, time=tm, comment=comment)
+        db.session.add(b)
+        db.session.commit()
+        flash('Запись создана.')
+        return redirect(url_for('my_bookings'))
 
-    return render_template('book.html', user=user, ground=ground, open_teams=open_teams)
+    # GET
+    return render_template('book.html', user=user, ground=ground, open_items=open_items)
 
 
 @app.route('/my-bookings')
@@ -427,7 +442,10 @@ def my_teams():
         return redirect(url_for('login'))
 
     t_ids = [tm.team_id for tm in TeamMember.query.filter_by(user_id=user_id).all()]
-    teams = Team.query.filter(Team.id.in_(t_ids)).order_by(Team.date, Team.time).all()
+    if t_ids:
+        teams = Team.query.filter(Team.id.in_(t_ids)).order_by(Team.date, Team.time).all()
+    else:
+        teams = []
 
     grounds = {g['id']: g for g in load_grounds()}
     items = []

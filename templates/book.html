@@ -59,22 +59,23 @@
 
   <hr style="margin:30px 0">
   <h3>Открытые команды на этой площадке</h3>
-  {% if open_teams %}
+
+  {% if open_items %}
     <table class="booking-table">
       <thead><tr>
         <th>Название</th><th>Дата</th><th>Время</th><th>Спорт</th><th>Участников</th><th></th>
       </tr></thead>
       <tbody>
-      {% for t in open_teams %}
+      {% for t in open_items %}
         <tr>
           <td>{{ t.name }}</td>
           <td>{{ t.date }}</td>
           <td>{{ t.time }}</td>
-          <td>{{ t.sport or ground.sport_types }}</td>
-          <td>{{ (t|attr('id')) and (namespace().count=0) }}</td>
+          <td>{{ t.sport }}</td>
+          <td>{{ t.members }}/{{ t.max_size }}</td>
           <td>
-            <form method="post" action="/teams/{{ t.id }}/join">
-              <button>Присоединиться</button>
+            <form method="post" action="/teams/{{ t.id }}/join" style="display:inline">
+              <button {% if not t.is_open %}disabled{% endif %}>Присоединиться</button>
             </form>
             <a href="/teams/{{ t.id }}" style="margin-left:8px">Подробнее</a>
           </td>
