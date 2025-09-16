@@ -3,21 +3,36 @@
 <head>
   <meta charset="utf-8">
   <title>Номер телефона</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+  <style>
+    .wrap{max-width:940px;margin:28px auto}
+    .btn{padding:10px 18px;border-radius:10px;border:0;background:#0b8e36;color:#fff;font-weight:700;cursor:pointer}
+    .btn2{margin-left:16px;background:#1a73e8}
+    .top{display:flex;align-items:center;justify-content:space-between}
+  </style>
 </head>
 <body>
-  <div class="top-bar">
-    <h2>Номер телефона</h2>
-    <a href="/logout" class="btn">Выйти</a>
+  <div class="wrap">
+    <div class="top">
+      <h2>Номер телефона</h2>
+      <a class="btn btn2" href="/logout">Выйти</a>
+    </div>
+
+    {% with messages = get_flashed_messages() %}
+      {% if messages %}
+        {% for m in messages %}<div class="flash">{{ m }}</div>{% endfor %}
+      {% endif %}
+    {% endwith %}
+
+    <p>Телефон нужен для связи по записям и командам. Нажмите кнопку ниже —
+       в чате бота появится клавиатура с кнопкой <b>«📲 Отправить номер»</b>.
+       Нажмите её — номер сохранится автоматически. После этого вернитесь сюда.</p>
+
+    <p>
+      <a class="btn" href="{{ start_link }}" target="_blank" rel="noopener">Отправить запрос в Telegram</a>
+      <a class="btn btn2" href="{{ check_url }}">Проверить снова</a>
+    </p>
   </div>
-
-  <p>Телефон нужен для связи по записям и командам. Нажмите кнопку ниже —
-     в чате бота появится кнопка «📱 Отправить номер». Нажмите её —
-     номер сохранится автоматически. После этого вернитесь сюда.</p>
-
-  <p>
-    <a class="btn" href="{{ deep_link }}">Отправить запрос в Telegram</a>
-    <a style="margin-left: 12px" href="{{ url_for('phone_page', next=next_url) }}">Проверить снова</a>
-  </p>
 </body>
 </html>
