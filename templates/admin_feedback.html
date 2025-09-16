@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <title>Админ · Обратная связь</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+  <style>
+    .muted{color:#6e8ba6}
+    .msg{white-space:pre-wrap}
+    textarea{width:100%;min-height:70px}
+    .chip{display:inline-block;padding:2px 8px;border-radius:999px;background:#e6f3ff;color:#007acc;font-size:12px}
+  </style>
+</head>
+<body>
+  <div class="top-bar">
+    <h2>Обратная связь</h2>
+    <div class="profile-container">
+      <a href="/admin/users">👥 Пользователи</a>
+      <a href="/admin/bookings" style="margin-left:10px">📋 Записи</a>
+      <a href="/main" style="margin-left:10px">🏠 На карту</a>
+    </div>
+  </div>
+
+  <table class="booking-table">
+    <thead>
+      <tr>
+        <th>Когда</th>
+        <th>Пользователь</th>
+        <th>Телефон</th>
+        <th>Сообщение</th>
+        <th>Ответ</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for fb in items %}
+      {% set u = users.get(fb.user_id) if users else None %}
+      <tr>
+        <td>{{ fb.created_at.strftime("%Y-%m-%d %H:%M") if fb.created_at else "" }}</td>
+        <td>
+          {% if u %}
+            <a href="/admin/user/{{ u.id }}">{{ (u.first_name or '') ~ ' ' ~ (u.last_name or '') }}</a><br>
+            <span class="muted">@{{ u.username or '—' }} · TG {{ u.tg_id or '—' }}</span>
+          {% else %}
+            TG {{ fb.tg_id or '—' }}
+          {% endif %}
+        </td>
+        <td>{{ (u.phone if u else '—') or '—' }}</td>
+        <td class="msg">{{ fb.text }}</td>
+        <td style="width:360px">
+          {% if fb.replied_at %}
+            <div class="chip">отвечено {{ fb.replied_at.strftime("%Y-%m-%d %H:%M") }}</div>
+            <div class="msg" style="margin-top:8px">{{ fb.reply_text }}</div>
+          {% else %}
+            <form method="post" action="/admin/feedback/{{ fb.id }}/reply">
+              <textarea name="reply" placeholder="Написать ответ в Telegram..."></textarea>
+              <button type="submit" style="margin-top:6px">Отправить</button>
+            </form>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+</body>
+</html>

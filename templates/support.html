@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <title>Поддержка</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+  <style>.muted{color:#6e8ba6}</style>
+</head>
+<body>
+  <div class="top-bar">
+    <h2>Связаться с поддержкой</h2>
+    <div class="profile-container">
+      <a href="/main">🏠 На карту</a>
+    </div>
+  </div>
+
+  <p class="muted">Сообщение будет доставлено администратору в Telegram. Ответ придёт вам в чат с ботом.</p>
+
+  <p>
+    <a class="btn" href="https://t.me/{{ BOT_USERNAME }}?start=feedback" target="_blank" rel="noopener">💬 Написать в бот</a>
+  </p>
+
+  <p class="muted">Если Telegram не открылся — найдите вручную бота <b>@{{ BOT_USERNAME }}</b> и отправьте сообщения.</p>
+</body>
+</html>

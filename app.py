@@ -18,48 +18,15 @@ BOT_USERNAME = os.getenv("BOT_USERNAME", "SportCityKorolevBot")  # без @
 ADMIN_TG_IDS = [s.strip() for s in os.getenv("ADMIN_TG_IDS", "532064703").split(",") if s.strip()]
 TG_WEBHOOK_SECRET = os.getenv("TG_WEBHOOK_SECRET", "change-me")  # придумай свой и положи в Railway
 
-# --- Показывать только выбранные площадки на карте ---
-# Можно переключать через переменную окружения GROUND_WHITELIST_ONLY=0/1
+# --- Показать только выбранные площадки на карте ---
 GROUND_WHITELIST_ONLY = os.getenv("GROUND_WHITELIST_ONLY", "1") == "1"
-
-# Белый список площадок (6 шт.)
 GROUND_WHITELIST = [
-    {
-        "latitude": 55.918148, "longitude": 37.841446,
-        "school_name": "МБОУ СОШ №5",
-        "address": "Октябрьский б-р, д.33",
-        "sport_types": None
-    },
-    {
-        "latitude": 55.936521, "longitude": 37.836438,
-        "school_name": "МБОУ Гимназия №5",
-        "address": "Мкр. Юбилейный, ул. Тихонравова, д.24/1",
-        "sport_types": None
-    },
-    {
-        "latitude": 55.919891, "longitude": 37.820370,
-        "school_name": "МБОУ СОШ №7",
-        "address": "ул. Октябрьская, д.23",
-        "sport_types": None
-    },
-    {
-        "latitude": 55.928124, "longitude": 37.854357,
-        "school_name": "МБОУ Лицей №4",
-        "address": "Мкр. Юбилейный, ул. Нестеренко, д.31",
-        "sport_types": None
-    },
-    {
-        "latitude": 55.924124, "longitude": 37.835674,
-        "school_name": "МБОУ Гимназия №17",
-        "address": "ул. Сакко и Ванцетти, д.12А",
-        "sport_types": None
-    },
-    {
-        "latitude": 55.909873, "longitude": 37.872384,
-        "school_name": "МБОУ Гимназия №18",
-        "address": "пр-т Космонавтов, д.37Б",
-        "sport_types": None
-    },
+    {"latitude": 55.918148, "longitude": 37.841446, "school_name": "МБОУ СОШ №5",  "address": "Октябрьский б-р, д.33",                              "sport_types": None},
+    {"latitude": 55.936521, "longitude": 37.836438, "school_name": "МБОУ Гимназия №5", "address": "Мкр. Юбилейный, ул. Тихонравова, д.24/1",         "sport_types": None},
+    {"latitude": 55.919891, "longitude": 37.820370, "school_name": "МБОУ СОШ №7",  "address": "ул. Октябрьская, д.23",                              "sport_types": None},
+    {"latitude": 55.928124, "longitude": 37.854357, "school_name": "МБОУ Лицей №4", "address": "Мкр. Юбилейный, ул. Нестеренко, д.31",               "sport_types": None},
+    {"latitude": 55.924124, "longitude": 37.835674, "school_name": "МБОУ Гимназия №17", "address": "ул. Сакко и Ванцетти, д.12А",                    "sport_types": None},
+    {"latitude": 55.909873, "longitude": 37.872384, "school_name": "МБОУ Гимназия №18", "address": "пр-т Космонавтов, д.37Б",                        "sport_types": None},
 ]
 
 app = Flask(__name__)
@@ -121,6 +88,18 @@ class TeamMember(db.Model):
     __table_args__ = (UniqueConstraint('team_id', 'user_id', name='uniq_team_user'),)
 
 
+# NEW: Обратная связь (сообщения пользователей боту)
+class Feedback(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, index=True)       # может быть None, если не найден в БД
+    tg_id = db.Column(db.String(50), index=True)
+    text = db.Column(db.Text, nullable=False)
+    created_at = db.Column(db.DateTime, default=utcnow)
+    replied_at = db.Column(db.DateTime)               # когда админ ответил
+    reply_text = db.Column(db.Text)                   # текст ответа
+    reply_admin_id = db.Column(db.Integer)            # id администратора (User.id), который ответил
+
+
 def _ensure_db():
     try:
         with app.app_context():
@@ -158,10 +137,8 @@ def admin_required(view):
 
 def load_grounds():
     """
-    Возвращает список площадок.
-    Если включён режим белого списка (GROUND_WHITELIST_ONLY=1),
-    не читаем Excel — возвращаем ровно 6 площадок из GROUND_WHITELIST.
-    Иначе читаем Excel как раньше.
+    Если включён белый список — возвращаем его напрямую.
+    Иначе читаем Excel.
     """
     if GROUND_WHITELIST_ONLY:
         items = []
@@ -176,7 +153,6 @@ def load_grounds():
             })
         return items
 
-    # ---- ниже остаётся прежняя логика чтения Excel ----
     path = 'data/grounds.xlsx'
     if not os.path.exists(path):
         return []
@@ -198,7 +174,6 @@ def load_grounds():
     df.reset_index(drop=True, inplace=True)
     df['id'] = df.index
     return df.to_dict(orient='records')
-
 
 
 def verify_telegram_auth(data: dict) -> bool:
@@ -224,7 +199,7 @@ def verify_webapp_init_data(init_data: str) -> bool:
     return hmac.compare_digest(calc, tg_hash)
 
 # =======================
-# Ошибки (чтобы видеть причину 500)
+# Ошибки
 # =======================
 @app.errorhandler(500)
 def err500(e):
@@ -352,11 +327,15 @@ def phone_check():
     flash('Телефон пока не получен. Проверьте, что отправили контакт в чате бота.')
     return redirect(url_for('phone_page'))
 
-# ===== Telegram webhook (для кнопки "Отправить номер")
+# ===== Telegram webhook + обратная связь
 def _tg_api(method: str, **params):
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/{method}"
-    resp = requests.post(url, data=params, timeout=15)
-    return resp.json()
+    try:
+        resp = requests.post(url, data=params, timeout=15)
+        return resp.json()
+    except Exception as e:
+        print("TG API error:", e)
+        return {"ok": False, "error": str(e)}
 
 
 @app.route('/tg/set_webhook')
@@ -381,10 +360,10 @@ def tg_webhook():
     msg = data.get('message') or data.get('edited_message') or {}
     chat = msg.get('chat') or {}
     from_user = msg.get('from') or {}
+    text = msg.get('text', '')
 
-    # /start с deep-link ?start=sendphone -> показать клавиатуру с запросом контакта
-    if 'text' in msg and msg.get('text', '').startswith('/start'):
-        text = msg['text']
+    # /start с deep-link ?start=sendphone -> клавиатура с запросом контакта
+    if text and text.startswith('/start'):
         if 'sendphone' in text:
             kb = {
                 "keyboard": [[{"text": "📲 Отправить номер", "request_contact": True}]],
@@ -395,13 +374,17 @@ def tg_webhook():
                     chat_id=chat.get('id'),
                     text="Нажмите кнопку ниже, чтобы отправить номер телефона:",
                     reply_markup=json.dumps(kb))
+        elif 'feedback' in text:
+            _tg_api('sendMessage',
+                    chat_id=chat.get('id'),
+                    text="Напишите ваше сообщение одним или несколькими сообщениями. Я передам его администратору.")
         else:
             _tg_api('sendMessage',
                     chat_id=chat.get('id'),
                     text="Привет! Откройте мини-приложение из меню бота.")
         return jsonify(ok=True)
 
-    # пришёл контакт — сохраним
+    # пришёл контакт — сохраним телефон
     contact = msg.get('contact')
     if contact and str(contact.get('user_id')) == str(from_user.get('id')):
         tg_id = str(from_user.get('id'))
@@ -423,6 +406,39 @@ def tg_webhook():
                 text=f"Спасибо! Номер {phone} сохранён.\nМожно вернуться в мини-приложение.")
         return jsonify(ok=True)
 
+    # любая другая текстовая реплика — считаем обратной связью
+    if text and not text.startswith('/'):
+        tg_id = str(from_user.get('id'))
+        user = User.query.filter_by(tg_id=tg_id).first()
+        fb = Feedback(
+            user_id=(user.id if user else None),
+            tg_id=tg_id,
+            text=text
+        )
+        db.session.add(fb)
+        db.session.commit()
+
+        # Уведомим админов
+        base = request.url_root.rstrip('/')
+        link = f"{base}/admin/feedback"
+        name = f"{(user.first_name or '')} {(user.last_name or '')}".strip() if user else ''
+        username = f"@{user.username}" if (user and user.username) else ''
+        phone = user.phone if (user and user.phone) else '—'
+        alert = f"🆕 Обратная связь\nОт: {name} {username}\nТелефон: {phone}\nTG ID: {tg_id}\n\n{text}"
+        for admin in ADMIN_TG_IDS:
+            try:
+                _tg_api('sendMessage',
+                        chat_id=admin,
+                        text=alert,
+                        reply_markup=json.dumps({"inline_keyboard": [[{"text": "Открыть в админке", "url": link}]]}))
+            except Exception as e:
+                print("notify admin error:", e)
+
+        _tg_api('sendMessage',
+                chat_id=chat.get('id'),
+                text="Спасибо! Сообщение отправлено администратору. Ответ придёт сюда.")
+        return jsonify(ok=True)
+
     return jsonify(ok=True)
 
 # =======================
@@ -438,6 +454,13 @@ def main():
     grounds = load_grounds()
     is_admin = bool(user.tg_id and str(user.tg_id) in ADMIN_TG_IDS)
     return render_template('main.html', user=user, grounds=grounds, is_admin=is_admin)
+
+@app.route('/support')
+def support():
+    user = current_user()
+    if not user:
+        return redirect(url_for('login'))
+    return render_template('support.html', BOT_USERNAME=BOT_USERNAME)
 
 
 @app.route('/book/<int:ground_id>', methods=['GET', 'POST'])
@@ -700,6 +723,41 @@ def admin_bookings():
             'sport_types': gr.get('sport_types', '—'),
         })
     return render_template('admin_bookings.html', items=items)
+
+
+# NEW: список обратной связи
+@app.route('/admin/feedback')
+@admin_required
+def admin_feedback():
+    fbs = Feedback.query.order_by(Feedback.created_at.desc()).limit(500).all()
+    # Подтянем пользователей
+    users = {u.id: u for u in User.query.filter(User.id.in_([fb.user_id for fb in fbs if fb.user_id])).all()}
+    return render_template('admin_feedback.html', items=fbs, users=users)
+
+
+# NEW: ответ на конкретное сообщение
+@app.route('/admin/feedback/<int:fb_id>/reply', methods=['POST'])
+@admin_required
+def admin_feedback_reply(fb_id):
+    fb = Feedback.query.get_or_404(fb_id)
+    reply = (request.form.get('reply') or '').strip()
+    if not reply:
+        flash('Введите текст ответа.')
+        return redirect(url_for('admin_feedback'))
+
+    # отправим ответ пользователю в Telegram
+    res = _tg_api('sendMessage', chat_id=fb.tg_id, text=reply)
+    if not res.get('ok'):
+        flash('Не удалось отправить ответ в Telegram (возможно, пользователь не писал боту).')
+        return redirect(url_for('admin_feedback'))
+
+    fb.reply_text = reply
+    fb.replied_at = utcnow()
+    admin = current_user()
+    fb.reply_admin_id = admin.id if admin else None
+    db.session.commit()
+    flash('Ответ отправлен.')
+    return redirect(url_for('admin_feedback'))
 
 
 @app.route('/admin/user/<int:user_id>')
