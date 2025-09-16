@@ -461,7 +461,7 @@ def team_close(team_id):
 # =======================
 #  Админ
 # =======================
-@app.route('/admin'); @app.route('/admin/')
+@app.route('/admin')
 @admin_required
 def admin_home(): return redirect(url_for('admin_users'))
 
