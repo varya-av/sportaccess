@@ -4,7 +4,7 @@ from flask import (
 )
 from flask_sqlalchemy import SQLAlchemy
 from functools import wraps
-from sqlalchemy import UniqueConstraint
+from sqlalchemy import UniqueConstraint, inspect, text
 import os, time, hashlib, hmac, json, pandas as pd
 from urllib.parse import parse_qsl
 from datetime import datetime
@@ -42,6 +42,7 @@ class User(db.Model):
     first_name = db.Column(db.String(100))
     last_name = db.Column(db.String(100))
     username = db.Column(db.String(100))
+    phone = db.Column(db.String(32))  # ✅ телефон
 
 
 class Booking(db.Model):
@@ -77,6 +78,25 @@ class TeamMember(db.Model):
     __table_args__ = (
         UniqueConstraint('team_id', 'user_id', name='uniq_team_user'),
     )
+
+# ----------------------- авто-инициализация/миграция -----------------------
+
+def _ensure_db():
+    """Создаём таблицы и, при необходимости, добавляем недостающие столбцы."""
+    try:
+        with app.app_context():
+            db.create_all()
+            insp = inspect(db.engine)
+
+            # если в таблице user нет колонки phone — добавим
+            cols = [c['name'] for c in insp.get_columns('user')]
+            if 'phone' not in cols:
+                with db.engine.begin() as conn:
+                    conn.execute(text('ALTER TABLE "user" ADD COLUMN phone VARCHAR(32)'))
+    except Exception as e:
+        print("DB init/migrate error:", e)
+
+_ensure_db()
 
 # =======================
 #  Утилиты
@@ -271,7 +291,7 @@ def main():
 
 @app.route('/book/<int:ground_id>', methods=['GET', 'POST'])
 def book(ground_id):
-    """Страница записи + при желании создание команды."""
+    """Страница записи + при желании создание команды. Если телефона у профиля нет — попросим и сохраним."""
     user_id = session.get('user_id')
     if not user_id:
         return redirect(url_for('login'))
@@ -283,8 +303,7 @@ def book(ground_id):
         abort(404, 'Площадка не найдена')
 
     # Открытые команды на этой площадке (для блока "Присоединиться")
-    teams_q = Team.query.filter_by(ground_id=ground_id, is_open=True).order_by(Team.date, Team.time)
-    open_teams = teams_q.all()
+    open_teams = Team.query.filter_by(ground_id=ground_id, is_open=True).order_by(Team.date, Team.time).all()
 
     # Счётчики участников по командам
     team_ids = [t.id for t in open_teams]
@@ -311,6 +330,25 @@ def book(ground_id):
         date = request.form.get('date', '').strip()
         tm = request.form.get('time', '').strip()
         comment = request.form.get('comment', '').strip()
+        phone = (request.form.get('phone') or '').strip()
+
+        # если в профиле телефона нет — требуем его в форме
+        if not user.phone:
+            if not phone:
+                flash('Укажите номер телефона.')
+                return render_template('book.html', user=user, ground=ground, open_items=open_items)
+            # базовая валидация
+            if len(phone) < 6 or len(phone) > 20:
+                flash('Проверьте номер телефона.')
+                return render_template('book.html', user=user, ground=ground, open_items=open_items)
+            user.phone = phone
+            db.session.commit()
+
+        # если телефон уже был, но пользователь прислал новый — обновим
+        elif phone and phone != user.phone:
+            if 6 <= len(phone) <= 20:
+                user.phone = phone
+                db.session.commit()
 
         if not date or not tm:
             flash('Укажите дату и время.')
@@ -442,10 +480,7 @@ def my_teams():
         return redirect(url_for('login'))
 
     t_ids = [tm.team_id for tm in TeamMember.query.filter_by(user_id=user_id).all()]
-    if t_ids:
-        teams = Team.query.filter(Team.id.in_(t_ids)).order_by(Team.date, Team.time).all()
-    else:
-        teams = []
+    teams = Team.query.filter(Team.id.in_(t_ids)).order_by(Team.date, Team.time).all() if t_ids else []
 
     grounds = {g['id']: g for g in load_grounds()}
     items = []
@@ -625,21 +660,8 @@ def admin_user_detail(user_id):
         })
     return render_template('admin_user.html', u=u, items=items)
 
-# --- Автоинициализация БД при импорте (важно для gunicorn) ---
-def _ensure_db():
-    try:
-        with app.app_context():
-            db.create_all()
-            # опционально: можно сделать db.session.commit()
-    except Exception as e:
-        # Просто лог — чтобы не уронить импорт
-        print("DB init error:", e)
-
-_ensure_db()
-# --------------------------------------------------------------
-
 # =======================
-#  Запуск
+#  Запуск (локально)
 # =======================
 if __name__ == '__main__':
     with app.app_context():

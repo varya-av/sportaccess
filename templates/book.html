@@ -36,6 +36,15 @@
     <label>Время</label>
     <input type="time" name="time" required>
 
+    <!-- ✅ Телефон -->
+    <label>Телефон</label>
+    <input type="tel"
+           name="phone"
+           value="{{ user.phone or '' }}"
+           {% if not user.phone %}required{% endif %}
+           pattern="^[0-9+\-\s()]{6,20}$"
+           placeholder="+7 999 123-45-67">
+
     <label>Режим</label>
     <select name="mode" id="mode" onchange="toggleTeamFields()">
       <option value="solo">Личная запись</option>
