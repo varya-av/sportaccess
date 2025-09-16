@@ -1,39 +1,40 @@
+import os
+import time
+import hmac
+import json
+import hashlib
+import requests
+import pandas as pd
+
+from urllib.parse import parse_qsl, urlencode
+from datetime import datetime
+from functools import wraps
+
 from flask import (
     Flask, render_template, request, redirect, url_for,
     session, abort, jsonify, flash, send_from_directory, g
 )
 from flask_sqlalchemy import SQLAlchemy
-from functools import wraps
 from sqlalchemy import UniqueConstraint, inspect, text
-import os, time, hashlib, hmac, json, pandas as pd, requests
-from urllib.parse import parse_qsl
-from datetime import datetime
 
 # =======================
-#  Секреты / настройки
+# Конфиг
 # =======================
 
-# Токен бота (можно переопределить через переменную окружения BOT_TOKEN)
 BOT_TOKEN = os.getenv("BOT_TOKEN", "7971252908:AAGfTw5shz1qRmioIOh_PYNSzEDEsyEAmUI")
-TELEGRAM_API = f"https://api.telegram.org/bot{BOT_TOKEN}"
+BOT_USERNAME = os.getenv("BOT_USERNAME", "SportCityKorolevBot")  # без @
+TG_WEBHOOK_SECRET = os.getenv("TG_WEBHOOK_SECRET", "varya-2025-secret-1")
 
-# Белый список админов по Telegram user id (через запятую). По умолчанию — твой ID.
 ADMIN_TG_IDS = [s.strip() for s in os.getenv("ADMIN_TG_IDS", "532064703").split(",") if s.strip()]
-
-# Секрет для ручной установки вебхука
-WEBHOOK_SECRET = os.getenv("TG_WEBHOOK_SECRET", "change-me")
 
 app = Flask(__name__)
 app.secret_key = os.urandom(32)
 
-# Фикс для Telegram Web (iframe): куки должны быть Secure + SameSite=None
-app.config.update(
-    SESSION_COOKIE_SECURE=True,
-    SESSION_COOKIE_SAMESITE="None",
-)
+# куки для WebApp (iframe)
+app.config.update(SESSION_COOKIE_SECURE=True, SESSION_COOKIE_SAMESITE="None")
 
 # =======================
-#  База данных
+# БД
 # =======================
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///users.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
@@ -42,7 +43,7 @@ db = SQLAlchemy(app)
 
 class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    tg_id = db.Column(db.String(50), unique=True, nullable=True)  # Telegram user id
+    tg_id = db.Column(db.String(50), unique=True, nullable=True)
     first_name = db.Column(db.String(100))
     last_name = db.Column(db.String(100))
     username = db.Column(db.String(100))
@@ -63,8 +64,8 @@ class Team(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     owner_id = db.Column(db.Integer, nullable=False, index=True)
     ground_id = db.Column(db.Integer, nullable=False, index=True)
-    date = db.Column(db.String(10), nullable=False)   # YYYY-MM-DD
-    time = db.Column(db.String(5), nullable=False)    # HH:MM
+    date = db.Column(db.String(10), nullable=False)
+    time = db.Column(db.String(5), nullable=False)
     name = db.Column(db.String(120), nullable=False)
     sport = db.Column(db.String(120))
     max_size = db.Column(db.Integer, default=10)
@@ -78,17 +79,15 @@ class TeamMember(db.Model):
     user_id = db.Column(db.Integer, nullable=False, index=True)
     role = db.Column(db.String(20), default='member')  # owner/member
     joined_at = db.Column(db.DateTime, default=datetime.utcnow)
+
     __table_args__ = (UniqueConstraint('team_id', 'user_id', name='uniq_team_user'),)
 
 
-# ----------------------- авто-инициализация/миграция -----------------------
 def _ensure_db():
-    """Создаём таблицы и, при необходимости, добавляем недостающие столбцы."""
     try:
         with app.app_context():
             db.create_all()
             insp = inspect(db.engine)
-            # если в таблице user нет колонки phone — добавим
             cols = [c['name'] for c in insp.get_columns('user')]
             if 'phone' not in cols:
                 with db.engine.begin() as conn:
@@ -96,11 +95,13 @@ def _ensure_db():
     except Exception as e:
         print("DB init/migrate error:", e)
 
+
 _ensure_db()
 
 # =======================
-#  Утилиты
+# Утилиты
 # =======================
+
 def current_user():
     uid = session.get('user_id')
     return User.query.get(uid) if uid else None
@@ -120,7 +121,6 @@ def admin_required(view):
 
 
 def load_grounds():
-    """Читает Excel с площадками и готовит список словарей."""
     path = 'data/grounds.xlsx'
     if not os.path.exists(path):
         abort(500, f'Файл {path} не найден на сервере')
@@ -132,16 +132,12 @@ def load_grounds():
         'Адрес объекта': 'address',
         'Для какого вида спорта предназначена (например футбол/баскетбол, футбольное поле, воркаут и тд.)': 'sport_types'
     })
-
     for col in ['latitude', 'longitude', 'school_name', 'address', 'sport_types']:
         if col not in df.columns:
             df[col] = None
     df = df[['latitude', 'longitude', 'school_name', 'address', 'sport_types']]
-
-    # Коммы -> точки и в float
-    df['latitude']  = pd.to_numeric(df['latitude'].astype(str).str.replace(',', '.', regex=False), errors='coerce')
+    df['latitude'] = pd.to_numeric(df['latitude'].astype(str).str.replace(',', '.', regex=False), errors='coerce')
     df['longitude'] = pd.to_numeric(df['longitude'].astype(str).str.replace(',', '.', regex=False), errors='coerce')
-
     df.dropna(subset=['latitude', 'longitude'], inplace=True)
     df.reset_index(drop=True, inplace=True)
     df['id'] = df.index
@@ -149,12 +145,10 @@ def load_grounds():
 
 
 def verify_telegram_auth(data: dict) -> bool:
-    """Проверка подписи для Login Widget (браузерный OAuth)."""
     data = dict(data)
     auth_date = data.get('auth_date')
     if not auth_date or time.time() - int(auth_date) > 86400:
         return False
-
     secret_key = hashlib.sha256(BOT_TOKEN.encode()).digest()
     check_hash = data.pop('hash', '')
     data_check_string = '\n'.join(sorted(f"{k}={v}" for k, v in data.items()))
@@ -163,20 +157,29 @@ def verify_telegram_auth(data: dict) -> bool:
 
 
 def verify_webapp_init_data(init_data: str) -> bool:
-    """Проверка подписи initData для Telegram WebApp."""
     pairs = dict(parse_qsl(init_data, keep_blank_values=True))
     tg_hash = pairs.pop('hash', None)
     if not tg_hash:
         return False
-
     secret_key = hmac.new(b'WebAppData', BOT_TOKEN.encode(), hashlib.sha256).digest()
     data_check_string = '\n'.join(f"{k}={v}" for k, v in sorted(pairs.items(), key=lambda x: x[0]))
     calc = hmac.new(secret_key, data_check_string.encode(), hashlib.sha256).hexdigest()
     return hmac.compare_digest(calc, tg_hash)
 
+
+def sanitize_phone(raw: str) -> str:
+    if not raw:
+        return ''
+    p = ''.join(ch for ch in raw if ch.isdigit() or ch == '+')
+    if p and p[0] != '+':
+        p = '+' + p
+    return p[:32]
+
+
 # =======================
-#  Служебные роуты
+# Служебные роуты
 # =======================
+
 @app.route('/health')
 def health():
     return 'ok', 200
@@ -193,21 +196,19 @@ def favicon():
 
 @app.route('/')
 def index():
-    # удобнее сразу на мини-приложение
     return redirect(url_for('webapp_entry'))
 
 # =======================
-#  Аутентификация
+# Аутентификация
 # =======================
+
 @app.route('/webapp')
 def webapp_entry():
-    """Страница WebApp (встроенный браузер Telegram)."""
     return render_template('webapp.html')
 
 
 @app.route('/tg_webapp_auth', methods=['POST'])
 def tg_webapp_auth():
-    """Приём initData из Telegram WebApp, проверка подписи и создание сессии."""
     init_data = request.form.get('init_data', '')
     if not init_data:
         return "no init_data", 400
@@ -238,13 +239,11 @@ def tg_webapp_auth():
 
 @app.route('/login')
 def login():
-    """Резервный вход (браузерный Telegram Login Widget)."""
     return render_template('login.html')
 
 
 @app.route('/tg_auth')
 def tg_auth():
-    """Callback от Login Widget: проверка подписи и создание сессии."""
     data = request.args.to_dict()
     if not verify_telegram_auth(data):
         return "Ошибка авторизации через Telegram", 403
@@ -271,103 +270,143 @@ def logout():
     return redirect(url_for('login'))
 
 # =======================
-#  Телефон через чат бота
+# Телефон через чат бота
 # =======================
+
+def tg_api(method: str, payload: dict):
+    """Вызов Telegram Bot API (методы: sendMessage, setWebhook, deleteWebhook, getWebhookInfo…)."""
+    url = f"https://api.telegram.org/bot{BOT_TOKEN}/{method}"
+    r = requests.post(url, json=payload, timeout=15)
+    try:
+        return r.json()
+    except Exception:
+        return {"ok": False, "status": r.status_code, "text": r.text}
+
+
 @app.route('/phone')
-def phone():
-    """Страница-заглушка: просим отправить номер в чат боту."""
+def phone_page():
+    """Страница с кнопкой «Запросить номер» и проверкой факта сохранения телефона."""
     user = current_user()
     if not user:
         return redirect(url_for('login'))
-    # если уже есть телефон — сразу на карту
+
+    next_url = request.args.get('next') or url_for('main')
+
+    # если телефон уже есть — сразу дальше
     if user.phone:
-        return redirect(url_for('main'))
-    return render_template('phone.html', user=user)
+        return redirect(next_url)
 
-
-@app.route('/tg/ask_phone', methods=['POST'])
-def tg_ask_phone():
-    """Шлём в чат кнопку с request_contact=True."""
-    user = current_user()
-    if not user or not user.tg_id:
-        return ('', 401)
-
-    payload = {
-        "chat_id": int(user.tg_id),
-        "text": "Нажмите кнопку ниже, чтобы отправить номер телефона.",
-        "reply_markup": {
-            "keyboard": [[{"text": "📱 Отправить номер", "request_contact": True}]],
-            "one_time_keyboard": True,
-            "resize_keyboard": True
+    # шлём команду в чат: «нажми Отправить номер»
+    tg_id = user.tg_id
+    if tg_id:
+        # reply-клавиатура с request_contact
+        kb = {
+            "keyboard": [[
+                {"text": "📱 Отправить номер", "request_contact": True}
+            ]],
+            "resize_keyboard": True,
+            "one_time_keyboard": True
         }
-    }
-    try:
-        r = requests.post(f"{TELEGRAM_API}/sendMessage", json=payload, timeout=10)
-        ok = r.json().get("ok", False)
-        if not ok:
-            # обычно это значит, что пользователь не нажимал Start у бота
-            return jsonify(ok=False, hint="Открой чат с ботом и нажми Start, затем вернись и повтори."), 200
-    except Exception as e:
-        print("sendMessage error:", e)
-        return jsonify(ok=False), 200
+        tg_api("sendMessage", {
+            "chat_id": int(tg_id),
+            "text": "Пожалуйста, отправьте ваш номер, нажав кнопку:",
+            "reply_markup": kb
+        })
 
-    return jsonify(ok=True)
+    # deep-link чтобы открыть чат по клику
+    deep_link = f"https://t.me/{BOT_USERNAME}?start=sendphone_{user.id}"
+
+    return render_template('phone.html', user=user, next_url=next_url, deep_link=deep_link)
 
 
 @app.route('/tg/webhook', methods=['POST'])
 def tg_webhook():
-    """Принимаем контакт, сохраняем телефон в БД."""
-    upd = request.get_json(silent=True) or {}
-    msg = upd.get('message') or {}
+    """Принимаем апдейты от Telegram. Сохраняем phone из message.contact."""
+    data = request.get_json(force=True, silent=True) or {}
+    msg = data.get('message') or {}
+
+    from_user = msg.get('from') or {}
+    chat = msg.get('chat') or {}
     contact = msg.get('contact')
-    if not contact:
+
+    # только личные чаты
+    if chat.get('type') != 'private':
         return jsonify(ok=True)
 
-    from_user = (msg.get('from') or {})
-    from_id = str(from_user.get('id') or '')
-
-    # контакт должен принадлежать отправителю
-    if str(contact.get('user_id')) != from_id:
-        return jsonify(ok=True)
-
-    phone_number = (contact.get('phone_number') or '').strip()
-    if not phone_number:
-        return jsonify(ok=True)
-
-    # лёгкая нормализация
-    phone_number = phone_number.replace(' ', '')
-    if phone_number[0].isdigit() and not phone_number.startswith('+'):
-        phone_number = '+' + phone_number
-
-    u = User.query.filter_by(tg_id=from_id).first()
-    if u:
-        u.phone = phone_number
-        db.session.commit()
-        try:
-            requests.post(
-                f"{TELEGRAM_API}/sendMessage",
-                json={"chat_id": int(from_id), "text": "✅ Телефон сохранён. Вернитесь в мини-приложение."},
-                timeout=10
-            )
-        except Exception as e:
-            print("confirm send error:", e)
+    # только если контакт принадлежит самому пользователю
+    if contact and str(contact.get('user_id')) == str(from_user.get('id')):
+        tg_id = str(from_user.get('id'))
+        phone = sanitize_phone(contact.get('phone_number'))
+        if phone:
+            user = User.query.filter_by(tg_id=tg_id).first()
+            if user:
+                user.phone = phone
+                db.session.commit()
+                tg_api("sendMessage", {
+                    "chat_id": int(tg_id),
+                    "text": f"Спасибо! Номер {phone} сохранён ✅",
+                    "reply_markup": {"remove_keyboard": True}
+                })
+    else:
+        # Если пришла команда вида /start sendphone_123
+        txt = (msg.get('text') or '').strip()
+        if txt.startswith('/start sendphone_'):
+            kb = {
+                "keyboard": [[
+                    {"text": "📱 Отправить номер", "request_contact": True}
+                ]],
+                "resize_keyboard": True,
+                "one_time_keyboard": True
+            }
+            tg_api("sendMessage", {
+                "chat_id": int(from_user.get('id')),
+                "text": "Нажмите кнопку, чтобы отправить номер:",
+                "reply_markup": kb
+            })
 
     return jsonify(ok=True)
 
 
 @app.route('/tg/set_webhook')
 def tg_set_webhook():
-    """Разовая установка вебхука на текущий хост."""
-    if request.args.get('secret') != WEBHOOK_SECRET:
+    """Ручка для ручной установки вебхука (открывается в браузере один раз)."""
+    secret = request.args.get('secret')
+    if secret != TG_WEBHOOK_SECRET:
         abort(403)
+
+    # строим публичный базовый URL из текущего запроса
     base = request.url_root.rstrip('/')
-    url = base + '/tg/webhook'
-    r = requests.get(f"{TELEGRAM_API}/setWebhook", params={"url": url}, timeout=10)
-    return r.text, 200, {'Content-Type': 'text/plain; charset=utf-8'}
+    webhook_url = f"{base}/tg/webhook"
+
+    res = tg_api("setWebhook", {"url": webhook_url})
+    return jsonify(res)
+
+
+@app.route('/tg/delete_webhook')
+def tg_delete_webhook():
+    secret = request.args.get('secret')
+    if secret != TG_WEBHOOK_SECRET:
+        abort(403)
+    res = tg_api("deleteWebhook", {})
+    return jsonify(res)
+
+
+@app.route('/tg/get_webhook_info')
+def tg_get_webhook_info():
+    secret = request.args.get('secret')
+    if secret != TG_WEBHOOK_SECRET:
+        abort(403)
+    # у Telegram у этого метода GET/POST не важен — используем POST для единообразия
+    r = requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/getWebhookInfo", timeout=15)
+    try:
+        return jsonify(r.json())
+    except Exception:
+        return r.text, 200, {'Content-Type': 'text/plain; charset=utf-8'}
 
 # =======================
-#  Основной UI
+# Основной UI
 # =======================
+
 @app.route('/main')
 def main():
     user_id = session.get('user_id')
@@ -375,10 +414,6 @@ def main():
         return redirect(url_for('login'))
 
     user = User.query.get(user_id)
-    # если телефона нет — сначала просим его прислать в чат
-    if not user.phone:
-        return redirect(url_for('phone'))
-
     grounds = load_grounds()
     is_admin = bool(user.tg_id and str(user.tg_id) in ADMIN_TG_IDS)
     return render_template('main.html', user=user, grounds=grounds, is_admin=is_admin)
@@ -386,24 +421,20 @@ def main():
 
 @app.route('/book/<int:ground_id>', methods=['GET', 'POST'])
 def book(ground_id):
-    """Страница записи + создание команды. Телефон берём только из чата бота."""
     user_id = session.get('user_id')
     if not user_id:
         return redirect(url_for('login'))
 
     user = User.query.get(user_id)
     if not user.phone:
-        return redirect(url_for('phone'))
+        return redirect(url_for('phone_page', next=url_for('book', ground_id=ground_id)))
 
     grounds = load_grounds()
     ground = next((g for g in grounds if g['id'] == ground_id), None)
     if not ground:
         abort(404, 'Площадка не найдена')
 
-    # Открытые команды на этой площадке (для блока "Присоединиться")
     open_teams = Team.query.filter_by(ground_id=ground_id, is_open=True).order_by(Team.date, Team.time).all()
-
-    # Счётчики участников по командам
     team_ids = [t.id for t in open_teams]
     members_map = {tid: 0 for tid in team_ids}
     if team_ids:
@@ -424,7 +455,7 @@ def book(ground_id):
         })
 
     if request.method == 'POST':
-        mode = request.form.get('mode', 'solo')  # solo | team_create
+        mode = request.form.get('mode', 'solo')
         date = request.form.get('date', '').strip()
         tm = request.form.get('time', '').strip()
         comment = request.form.get('comment', '').strip()
@@ -452,22 +483,19 @@ def book(ground_id):
                 is_open=True
             )
             db.session.add(team)
-            db.session.flush()  # нужен team.id
-
+            db.session.flush()
             db.session.add(TeamMember(team_id=team.id, user_id=user.id, role='owner'))
             db.session.commit()
 
-            flash('Команда создана. Пригласите участников или позвольте им присоединиться.')
+            flash('Команда создана.')
             return redirect(url_for('team_detail', team_id=team.id))
 
-        # Личная запись
         b = Booking(user_id=user.id, ground_id=ground_id, date=date, time=tm, comment=comment)
         db.session.add(b)
         db.session.commit()
         flash('Запись создана.')
         return redirect(url_for('my_bookings'))
 
-    # GET
     return render_template('book.html', user=user, ground=ground, open_items=open_items)
 
 
@@ -512,12 +540,10 @@ def cancel_booking(booking_id):
     flash('Запись отменена.')
     return redirect(url_for('my_bookings'))
 
-# =======================
-#  Команды: списки/детали/действия
-# =======================
+# ======= Команды =======
+
 @app.route('/teams')
 def teams_list():
-    """Список всех открытых команд (фильтры по площадке/дате опционально)."""
     ground_id = request.args.get('ground_id', type=int)
     date = request.args.get('date', type=str)
 
@@ -528,56 +554,43 @@ def teams_list():
         q = q.filter(Team.date == date)
 
     teams = q.order_by(Team.date, Team.time).all()
-
     grounds = {g['id']: g for g in load_grounds()}
     items = []
     for t in teams:
         gnd = grounds.get(t.ground_id, {})
         member_count = TeamMember.query.filter_by(team_id=t.id).count()
         items.append({
-            'id': t.id,
-            'name': t.name,
-            'date': t.date,
-            'time': t.time,
+            'id': t.id, 'name': t.name, 'date': t.date, 'time': t.time,
             'sport': t.sport or gnd.get('sport_types', '—'),
-            'max_size': t.max_size,
-            'members': member_count,
+            'max_size': t.max_size, 'members': member_count,
             'school_name': gnd.get('school_name', '—'),
             'address': gnd.get('address', '—'),
             'is_open': t.is_open
         })
-
     return render_template('teams_list.html', items=items)
 
 
 @app.route('/my-teams')
 def my_teams():
-    """Команды, где я состою/владею."""
     user_id = session.get('user_id')
     if not user_id:
         return redirect(url_for('login'))
 
     t_ids = [tm.team_id for tm in TeamMember.query.filter_by(user_id=user_id).all()]
     teams = Team.query.filter(Team.id.in_(t_ids)).order_by(Team.date, Team.time).all() if t_ids else []
-
     grounds = {g['id']: g for g in load_grounds()}
     items = []
     for t in teams:
         gnd = grounds.get(t.ground_id, {})
         members = TeamMember.query.filter_by(team_id=t.id).count()
         items.append({
-            'id': t.id,
-            'name': t.name,
-            'date': t.date,
-            'time': t.time,
+            'id': t.id, 'name': t.name, 'date': t.date, 'time': t.time,
             'sport': t.sport or gnd.get('sport_types', '—'),
-            'max_size': t.max_size,
-            'members': members,
+            'max_size': t.max_size, 'members': members,
             'school_name': gnd.get('school_name', '—'),
             'address': gnd.get('address', '—'),
             'is_open': t.is_open
         })
-
     return render_template('my_teams.html', items=items)
 
 
@@ -585,7 +598,6 @@ def my_teams():
 def team_detail(team_id):
     t = Team.query.get_or_404(team_id)
     user = current_user()
-
     grounds = {g['id']: g for g in load_grounds()}
     gnd = grounds.get(t.ground_id, {})
     members = TeamMember.query.filter_by(team_id=t.id).all()
@@ -606,7 +618,8 @@ def team_detail(team_id):
     member_count = len(members)
 
     return render_template('team_detail.html',
-                           team=t, gnd=gnd, members=mlist, member_count=member_count,
+                           team=t, gnd=gnd, members=mlist,
+                           member_count=member_count,
                            is_owner=is_owner, i_am_member=i_am_member)
 
 
@@ -648,7 +661,6 @@ def team_leave(team_id):
         flash('Вы не в этой команде.')
         return redirect(url_for('team_detail', team_id=team_id))
 
-    # владелец не может уйти, пока открыт набор (может закрыть)
     if t.owner_id == user.id:
         flash('Вы владелец. Сначала закройте набор или передайте владение.')
         return redirect(url_for('team_detail', team_id=team_id))
@@ -674,71 +686,9 @@ def team_close(team_id):
     flash('Набор в команду закрыт.')
     return redirect(url_for('team_detail', team_id=team_id))
 
-# =======================
-#  Админ-просмотр
-# =======================
-@app.route('/admin')
-@admin_required
-def admin_home():
-    return redirect(url_for('admin_users'))
-
-
-@app.route('/admin/users')
-@admin_required
-def admin_users():
-    users = User.query.order_by(User.id.desc()).all()
-    return render_template('admin_users.html', users=users)
-
-
-@app.route('/admin/bookings')
-@admin_required
-def admin_bookings():
-    bookings = Booking.query.order_by(Booking.date, Booking.time).all()
-    users = {u.id: u for u in User.query.all()}
-    grounds = {g['id']: g for g in load_grounds()}
-
-    items = []
-    for b in bookings:
-        u = users.get(b.user_id)
-        g = grounds.get(b.ground_id, {})
-        items.append({
-            'id': b.id,
-            'date': b.date,
-            'time': b.time,
-            'comment': b.comment,
-            'user_id': b.user_id,
-            'user_name': f"{(u.first_name or '')} {(u.last_name or '')}".strip() if u else '—',
-            'username': u.username if u else '—',
-            'tg_id': u.tg_id if u else '—',
-            'school_name': g.get('school_name', '—'),
-            'address': g.get('address', '—'),
-            'sport_types': g.get('sport_types', '—'),
-        })
-    return render_template('admin_bookings.html', items=items)
-
-
-@app.route('/admin/user/<int:user_id>')
-@admin_required
-def admin_user_detail(user_id):
-    u = User.query.get_or_404(user_id)
-    bks = Booking.query.filter_by(user_id=user_id).order_by(Booking.date, Booking.time).all()
-    grounds = {g['id']: g for g in load_grounds()}
-    items = []
-    for b in bks:
-        g = grounds.get(b.ground_id, {})
-        items.append({
-            'id': b.id,
-            'date': b.date,
-            'time': b.time,
-            'comment': b.comment,
-            'school_name': g.get('school_name', '—'),
-            'address': g.get('address', '—'),
-            'sport_types': g.get('sport_types', '—'),
-        })
-    return render_template('admin_user.html', u=u, items=items)
 
 # =======================
-#  Запуск (локально)
+# Запуск локально
 # =======================
 if __name__ == '__main__':
     with app.app_context():
