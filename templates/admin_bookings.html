@@ -25,6 +25,7 @@
         <th>Пользователь</th>
         <th>Username</th>
         <th>TG ID</th>
+        <th>Телефон</th> <!-- ✅ -->
         <th>Комментарий</th>
       </tr>
     </thead>
@@ -39,6 +40,7 @@
         <td><a href="/admin/user/{{ x.user_id }}">{{ x.user_name }}</a></td>
         <td>@{{ x.username }}</td>
         <td>{{ x.tg_id }}</td>
+        <td>{{ x.user_phone or '—' }}</td> <!-- ✅ -->
         <td>{{ x.comment or '' }}</td>
       </tr>
       {% endfor %}

@@ -5,7 +5,7 @@ from flask import (
 from flask_sqlalchemy import SQLAlchemy
 from functools import wraps
 from sqlalchemy import UniqueConstraint, inspect, text
-import os, time, hashlib, hmac, json, pandas as pd
+import os, time, hashlib, hmac, json, pandas as pd, requests
 from urllib.parse import parse_qsl
 from datetime import datetime
 
@@ -13,11 +13,15 @@ from datetime import datetime
 #  Секреты / настройки
 # =======================
 
-# По твоей просьбе — токен оставлен в коде (можно переопределить переменной окружения BOT_TOKEN)
+# Токен бота (можно переопределить через переменную окружения BOT_TOKEN)
 BOT_TOKEN = os.getenv("BOT_TOKEN", "7971252908:AAGfTw5shz1qRmioIOh_PYNSzEDEsyEAmUI")
+TELEGRAM_API = f"https://api.telegram.org/bot{BOT_TOKEN}"
 
-# Белый список админов по Telegram user id (через запятую). По умолчанию — твой ID из логов.
+# Белый список админов по Telegram user id (через запятую). По умолчанию — твой ID.
 ADMIN_TG_IDS = [s.strip() for s in os.getenv("ADMIN_TG_IDS", "532064703").split(",") if s.strip()]
+
+# Секрет для ручной установки вебхука
+WEBHOOK_SECRET = os.getenv("TG_WEBHOOK_SECRET", "change-me")
 
 app = Flask(__name__)
 app.secret_key = os.urandom(32)
@@ -42,7 +46,7 @@ class User(db.Model):
     first_name = db.Column(db.String(100))
     last_name = db.Column(db.String(100))
     username = db.Column(db.String(100))
-    phone = db.Column(db.String(32))  # ✅ телефон
+    phone = db.Column(db.String(32))  # телефон
 
 
 class Booking(db.Model):
@@ -74,20 +78,16 @@ class TeamMember(db.Model):
     user_id = db.Column(db.Integer, nullable=False, index=True)
     role = db.Column(db.String(20), default='member')  # owner/member
     joined_at = db.Column(db.DateTime, default=datetime.utcnow)
+    __table_args__ = (UniqueConstraint('team_id', 'user_id', name='uniq_team_user'),)
 
-    __table_args__ = (
-        UniqueConstraint('team_id', 'user_id', name='uniq_team_user'),
-    )
 
 # ----------------------- авто-инициализация/миграция -----------------------
-
 def _ensure_db():
     """Создаём таблицы и, при необходимости, добавляем недостающие столбцы."""
     try:
         with app.app_context():
             db.create_all()
             insp = inspect(db.engine)
-
             # если в таблице user нет колонки phone — добавим
             cols = [c['name'] for c in insp.get_columns('user')]
             if 'phone' not in cols:
@@ -101,7 +101,6 @@ _ensure_db()
 # =======================
 #  Утилиты
 # =======================
-
 def current_user():
     uid = session.get('user_id')
     return User.query.get(uid) if uid else None
@@ -151,7 +150,7 @@ def load_grounds():
 
 def verify_telegram_auth(data: dict) -> bool:
     """Проверка подписи для Login Widget (браузерный OAuth)."""
-    data = dict(data)  # не мутируем исходный dict
+    data = dict(data)
     auth_date = data.get('auth_date')
     if not auth_date or time.time() - int(auth_date) > 86400:
         return False
@@ -178,7 +177,6 @@ def verify_webapp_init_data(init_data: str) -> bool:
 # =======================
 #  Служебные роуты
 # =======================
-
 @app.route('/health')
 def health():
     return 'ok', 200
@@ -201,7 +199,6 @@ def index():
 # =======================
 #  Аутентификация
 # =======================
-
 @app.route('/webapp')
 def webapp_entry():
     """Страница WebApp (встроенный браузер Telegram)."""
@@ -274,9 +271,103 @@ def logout():
     return redirect(url_for('login'))
 
 # =======================
+#  Телефон через чат бота
+# =======================
+@app.route('/phone')
+def phone():
+    """Страница-заглушка: просим отправить номер в чат боту."""
+    user = current_user()
+    if not user:
+        return redirect(url_for('login'))
+    # если уже есть телефон — сразу на карту
+    if user.phone:
+        return redirect(url_for('main'))
+    return render_template('phone.html', user=user)
+
+
+@app.route('/tg/ask_phone', methods=['POST'])
+def tg_ask_phone():
+    """Шлём в чат кнопку с request_contact=True."""
+    user = current_user()
+    if not user or not user.tg_id:
+        return ('', 401)
+
+    payload = {
+        "chat_id": int(user.tg_id),
+        "text": "Нажмите кнопку ниже, чтобы отправить номер телефона.",
+        "reply_markup": {
+            "keyboard": [[{"text": "📱 Отправить номер", "request_contact": True}]],
+            "one_time_keyboard": True,
+            "resize_keyboard": True
+        }
+    }
+    try:
+        r = requests.post(f"{TELEGRAM_API}/sendMessage", json=payload, timeout=10)
+        ok = r.json().get("ok", False)
+        if not ok:
+            # обычно это значит, что пользователь не нажимал Start у бота
+            return jsonify(ok=False, hint="Открой чат с ботом и нажми Start, затем вернись и повтори."), 200
+    except Exception as e:
+        print("sendMessage error:", e)
+        return jsonify(ok=False), 200
+
+    return jsonify(ok=True)
+
+
+@app.route('/tg/webhook', methods=['POST'])
+def tg_webhook():
+    """Принимаем контакт, сохраняем телефон в БД."""
+    upd = request.get_json(silent=True) or {}
+    msg = upd.get('message') or {}
+    contact = msg.get('contact')
+    if not contact:
+        return jsonify(ok=True)
+
+    from_user = (msg.get('from') or {})
+    from_id = str(from_user.get('id') or '')
+
+    # контакт должен принадлежать отправителю
+    if str(contact.get('user_id')) != from_id:
+        return jsonify(ok=True)
+
+    phone_number = (contact.get('phone_number') or '').strip()
+    if not phone_number:
+        return jsonify(ok=True)
+
+    # лёгкая нормализация
+    phone_number = phone_number.replace(' ', '')
+    if phone_number[0].isdigit() and not phone_number.startswith('+'):
+        phone_number = '+' + phone_number
+
+    u = User.query.filter_by(tg_id=from_id).first()
+    if u:
+        u.phone = phone_number
+        db.session.commit()
+        try:
+            requests.post(
+                f"{TELEGRAM_API}/sendMessage",
+                json={"chat_id": int(from_id), "text": "✅ Телефон сохранён. Вернитесь в мини-приложение."},
+                timeout=10
+            )
+        except Exception as e:
+            print("confirm send error:", e)
+
+    return jsonify(ok=True)
+
+
+@app.route('/tg/set_webhook')
+def tg_set_webhook():
+    """Разовая установка вебхука на текущий хост."""
+    if request.args.get('secret') != WEBHOOK_SECRET:
+        abort(403)
+    base = request.url_root.rstrip('/')
+    url = base + '/tg/webhook'
+    r = requests.get(f"{TELEGRAM_API}/setWebhook", params={"url": url}, timeout=10)
+    return r.text, 200, {'Content-Type': 'text/plain; charset=utf-8'}
+
+# =======================
 #  Основной UI
 # =======================
-
 @app.route('/main')
 def main():
     user_id = session.get('user_id')
@@ -284,6 +375,10 @@ def main():
         return redirect(url_for('login'))
 
     user = User.query.get(user_id)
+    # если телефона нет — сначала просим его прислать в чат
+    if not user.phone:
+        return redirect(url_for('phone'))
+
     grounds = load_grounds()
     is_admin = bool(user.tg_id and str(user.tg_id) in ADMIN_TG_IDS)
     return render_template('main.html', user=user, grounds=grounds, is_admin=is_admin)
@@ -291,12 +386,15 @@ def main():
 
 @app.route('/book/<int:ground_id>', methods=['GET', 'POST'])
 def book(ground_id):
-    """Страница записи + при желании создание команды. Если телефона у профиля нет — попросим и сохраним."""
+    """Страница записи + создание команды. Телефон берём только из чата бота."""
     user_id = session.get('user_id')
     if not user_id:
         return redirect(url_for('login'))
 
     user = User.query.get(user_id)
+    if not user.phone:
+        return redirect(url_for('phone'))
+
     grounds = load_grounds()
     ground = next((g for g in grounds if g['id'] == ground_id), None)
     if not ground:
@@ -330,25 +428,6 @@ def book(ground_id):
         date = request.form.get('date', '').strip()
         tm = request.form.get('time', '').strip()
         comment = request.form.get('comment', '').strip()
-        phone = (request.form.get('phone') or '').strip()
-
-        # если в профиле телефона нет — требуем его в форме
-        if not user.phone:
-            if not phone:
-                flash('Укажите номер телефона.')
-                return render_template('book.html', user=user, ground=ground, open_items=open_items)
-            # базовая валидация
-            if len(phone) < 6 or len(phone) > 20:
-                flash('Проверьте номер телефона.')
-                return render_template('book.html', user=user, ground=ground, open_items=open_items)
-            user.phone = phone
-            db.session.commit()
-
-        # если телефон уже был, но пользователь прислал новый — обновим
-        elif phone and phone != user.phone:
-            if 6 <= len(phone) <= 20:
-                user.phone = phone
-                db.session.commit()
 
         if not date or not tm:
             flash('Укажите дату и время.')
@@ -436,7 +515,6 @@ def cancel_booking(booking_id):
 # =======================
 #  Команды: списки/детали/действия
 # =======================
-
 @app.route('/teams')
 def teams_list():
     """Список всех открытых команд (фильтры по площадке/дате опционально)."""
@@ -599,7 +677,6 @@ def team_close(team_id):
 # =======================
 #  Админ-просмотр
 # =======================
-
 @app.route('/admin')
 @admin_required
 def admin_home():

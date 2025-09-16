@@ -21,6 +21,7 @@
         <th>Имя</th>
         <th>Username</th>
         <th>TG ID</th>
+        <th>Телефон</th> <!-- ✅ -->
         <th></th>
       </tr>
     </thead>
@@ -31,6 +32,7 @@
         <td>{{ (u.first_name or '') ~ ' ' ~ (u.last_name or '') }}</td>
         <td>@{{ u.username or '—' }}</td>
         <td>{{ u.tg_id or '—' }}</td>
+        <td>{{ u.phone or '—' }}</td> <!-- ✅ -->
         <td><a href="/admin/user/{{ u.id }}">Открыть</a></td>
       </tr>
       {% endfor %}

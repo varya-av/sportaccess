@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <title>Нужен номер телефона</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+  <style>.muted{color:#6e8ba6}.box{max-width:560px}</style>
+</head>
+<body>
+  <div class="top-bar">
+    <h2>Номер телефона</h2>
+    <div class="profile-container"><a href="/logout">🚪 Выйти</a></div>
+  </div>
+
+  <div class="box">
+    <p class="muted">
+      Телефон нужен для связи по записям и командам. Нажмите кнопку ниже —
+      в чате бота появится кнопка <b>«📱 Отправить номер»</b>. Нажмите её —
+      номер сохранится автоматически. После этого вернитесь сюда.
+    </p>
+
+    <button onclick="askPhone()">Отправить запрос в Telegram</button>
+    <a href="/main" style="margin-left:10px">Проверить снова</a>
+
+    <div id="hint" class="muted" style="margin-top:10px;display:none">
+      Если бот не прислал сообщение — откройте чат с ботом, нажмите <b>Start</b>,
+      затем вернитесь и нажмите кнопку ещё раз.
+    </div>
+  </div>
+
+  <script>
+    async function askPhone() {
+      try {
+        const r = await fetch('/tg/ask_phone', {method: 'POST'});
+        const j = await r.json();
+        if (j.ok) {
+          alert('Я отправил сообщение в чат. Нажмите «📱 Отправить номер», затем вернитесь и нажмите «Проверить снова».');
+        } else {
+          document.getElementById('hint').style.display = 'block';
+          if (j.hint) alert(j.hint);
+        }
+      } catch (e) {
+        alert('Не удалось отправить запрос. Попробуйте позже.');
+      }
+    }
+  </script>
+</body>
+</html>
