@@ -18,6 +18,50 @@ BOT_USERNAME = os.getenv("BOT_USERNAME", "SportCityKorolevBot")  # без @
 ADMIN_TG_IDS = [s.strip() for s in os.getenv("ADMIN_TG_IDS", "532064703").split(",") if s.strip()]
 TG_WEBHOOK_SECRET = os.getenv("TG_WEBHOOK_SECRET", "change-me")  # придумай свой и положи в Railway
 
+# --- Показывать только выбранные площадки на карте ---
+# Можно переключать через переменную окружения GROUND_WHITELIST_ONLY=0/1
+GROUND_WHITELIST_ONLY = os.getenv("GROUND_WHITELIST_ONLY", "1") == "1"
+
+# Белый список площадок (6 шт.)
+GROUND_WHITELIST = [
+    {
+        "latitude": 55.918148, "longitude": 37.841446,
+        "school_name": "МБОУ СОШ №5",
+        "address": "Октябрьский б-р, д.33",
+        "sport_types": None
+    },
+    {
+        "latitude": 55.936521, "longitude": 37.836438,
+        "school_name": "МБОУ Гимназия №5",
+        "address": "Мкр. Юбилейный, ул. Тихонравова, д.24/1",
+        "sport_types": None
+    },
+    {
+        "latitude": 55.919891, "longitude": 37.820370,
+        "school_name": "МБОУ СОШ №7",
+        "address": "ул. Октябрьская, д.23",
+        "sport_types": None
+    },
+    {
+        "latitude": 55.928124, "longitude": 37.854357,
+        "school_name": "МБОУ Лицей №4",
+        "address": "Мкр. Юбилейный, ул. Нестеренко, д.31",
+        "sport_types": None
+    },
+    {
+        "latitude": 55.924124, "longitude": 37.835674,
+        "school_name": "МБОУ Гимназия №17",
+        "address": "ул. Сакко и Ванцетти, д.12А",
+        "sport_types": None
+    },
+    {
+        "latitude": 55.909873, "longitude": 37.872384,
+        "school_name": "МБОУ Гимназия №18",
+        "address": "пр-т Космонавтов, д.37Б",
+        "sport_types": None
+    },
+]
+
 app = Flask(__name__)
 app.secret_key = os.urandom(32)
 
@@ -113,7 +157,12 @@ def admin_required(view):
 
 
 def load_grounds():
-    """Безопасное чтение Excel. Если файла нет — вернём пустой список, чтобы не уронить всё приложение."""
+    """
+    Безопасное чтение Excel. Если файла нет — вернём пустой список.
+    Если включён GROUND_WHITELIST_ONLY — оставим только площадки из белого списка
+    по совпадению координат (с округлением до 6 знаков) и при необходимости
+    переопределим имя/адрес из списка.
+    """
     path = 'data/grounds.xlsx'
     if not os.path.exists(path):
         return []
@@ -132,6 +181,34 @@ def load_grounds():
     df['latitude'] = pd.to_numeric(df['latitude'].astype(str).str.replace(',', '.', regex=False), errors='coerce')
     df['longitude'] = pd.to_numeric(df['longitude'].astype(str).str.replace(',', '.', regex=False), errors='coerce')
     df.dropna(subset=['latitude', 'longitude'], inplace=True)
+
+    # Применяем белый список (если включён)
+    if GROUND_WHITELIST_ONLY and GROUND_WHITELIST:
+        df['lat_r'] = df['latitude'].round(6)
+        df['lon_r'] = df['longitude'].round(6)
+
+        allow = {
+            (round(item['latitude'], 6), round(item['longitude'], 6)): item
+            for item in GROUND_WHITELIST
+        }
+
+        mask = df.apply(lambda r: (r['lat_r'], r['lon_r']) in allow, axis=1)
+        df = df[mask].copy()
+
+        # Перезапишем название/адрес из whitelist (если заданы)
+        def _override(row):
+            info = allow.get((row['lat_r'], row['lon_r']))
+            if info:
+                row['school_name'] = info.get('school_name') or row['school_name']
+                row['address']     = info.get('address')     or row['address']
+                row['sport_types'] = info.get('sport_types') or row['sport_types']
+            return row
+
+        if not df.empty:
+            df = df.apply(_override, axis=1)
+
+        df.drop(columns=['lat_r', 'lon_r'], inplace=True, errors='ignore')
+
     df.reset_index(drop=True, inplace=True)
     df['id'] = df.index
     return df.to_dict(orient='records')
