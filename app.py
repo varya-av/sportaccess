@@ -158,11 +158,25 @@ def admin_required(view):
 
 def load_grounds():
     """
-    Безопасное чтение Excel. Если файла нет — вернём пустой список.
-    Если включён GROUND_WHITELIST_ONLY — оставим только площадки из белого списка
-    по совпадению координат (с округлением до 6 знаков) и при необходимости
-    переопределим имя/адрес из списка.
+    Возвращает список площадок.
+    Если включён режим белого списка (GROUND_WHITELIST_ONLY=1),
+    не читаем Excel — возвращаем ровно 6 площадок из GROUND_WHITELIST.
+    Иначе читаем Excel как раньше.
     """
+    if GROUND_WHITELIST_ONLY:
+        items = []
+        for i, src in enumerate(GROUND_WHITELIST):
+            items.append({
+                "id": i,
+                "latitude": float(src["latitude"]),
+                "longitude": float(src["longitude"]),
+                "school_name": src.get("school_name") or "",
+                "address": src.get("address") or "",
+                "sport_types": src.get("sport_types") or "",
+            })
+        return items
+
+    # ---- ниже остаётся прежняя логика чтения Excel ----
     path = 'data/grounds.xlsx'
     if not os.path.exists(path):
         return []
@@ -181,37 +195,10 @@ def load_grounds():
     df['latitude'] = pd.to_numeric(df['latitude'].astype(str).str.replace(',', '.', regex=False), errors='coerce')
     df['longitude'] = pd.to_numeric(df['longitude'].astype(str).str.replace(',', '.', regex=False), errors='coerce')
     df.dropna(subset=['latitude', 'longitude'], inplace=True)
-
-    # Применяем белый список (если включён)
-    if GROUND_WHITELIST_ONLY and GROUND_WHITELIST:
-        df['lat_r'] = df['latitude'].round(6)
-        df['lon_r'] = df['longitude'].round(6)
-
-        allow = {
-            (round(item['latitude'], 6), round(item['longitude'], 6)): item
-            for item in GROUND_WHITELIST
-        }
-
-        mask = df.apply(lambda r: (r['lat_r'], r['lon_r']) in allow, axis=1)
-        df = df[mask].copy()
-
-        # Перезапишем название/адрес из whitelist (если заданы)
-        def _override(row):
-            info = allow.get((row['lat_r'], row['lon_r']))
-            if info:
-                row['school_name'] = info.get('school_name') or row['school_name']
-                row['address']     = info.get('address')     or row['address']
-                row['sport_types'] = info.get('sport_types') or row['sport_types']
-            return row
-
-        if not df.empty:
-            df = df.apply(_override, axis=1)
-
-        df.drop(columns=['lat_r', 'lon_r'], inplace=True, errors='ignore')
-
     df.reset_index(drop=True, inplace=True)
     df['id'] = df.index
     return df.to_dict(orient='records')
+
 
 
 def verify_telegram_auth(data: dict) -> bool:
